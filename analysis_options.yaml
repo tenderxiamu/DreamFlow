@@ -1,0 +1,5 @@
+# DreamFlow 分析配置（不依赖 flutter_lints，保证离线可分析）
+analyzer:
+  errors:
+    unused_import: warning
+    dead_code: warning
