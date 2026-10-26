@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:dreamflow/data/sleep_session_recorder.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
 import 'package:dreamflow/design_system/widgets/df_controls.dart';
@@ -35,6 +36,8 @@ class DfWakeFlow extends StatefulWidget {
     this.tickInterval = const Duration(seconds: 1),
     this.loadDuration = const Duration(milliseconds: 900),
     this.onRetryReport,
+    this.recordSession = false,
+    this.reportLoader,
   });
 
   /// 首次唤醒时刻；每次「再睡 5 分钟」后 +5 分钟
@@ -48,6 +51,12 @@ class DfWakeFlow extends StatefulWidget {
 
   /// 报告异常态的重试回调（§12 缺口 4：异常态必须给出可操作出口）
   final VoidCallback? onRetryReport;
+
+  /// M5：true 时「我醒了」会把本次会话（含再睡次数）落库 SleepSessions
+  final bool recordSession;
+
+  /// M5：报告数据加载器（本地聚合）；null = 静态演示稿
+  final DfReportLoader? reportLoader;
 
   @override
   State<DfWakeFlow> createState() => _DfWakeFlowState();
@@ -114,6 +123,10 @@ class _DfWakeFlowState extends State<DfWakeFlow> {
 
   /// 我醒了 → 报告（先 loading，取到数据后切正文）
   void _openReport() {
+    // M5：会话闭环落库（含再睡次数），失败不阻断报告
+    if (widget.recordSession) {
+      SleepSessionRecorder.instance.complete(snoozes: _snoozes);
+    }
     setState(() => _phase = DfWakePhase.reportLoading);
     _loadTimer?.cancel();
     _loadTimer = Timer(widget.loadDuration, () {
@@ -152,7 +165,7 @@ class _DfWakeFlowState extends State<DfWakeFlow> {
           onRetry: widget.onRetryReport,
         );
       case DfWakePhase.reportReady:
-        return const DfReportScreen();
+        return DfReportScreen(loader: widget.reportLoader);
     }
   }
 }

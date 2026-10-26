@@ -70,6 +70,17 @@ class DreamFlowDb extends _$DreamFlowDb {
     return q.get();
   }
 
+  /// D 报告屏：近 N 天情绪记录（7 天情绪 × 睡眠关联条用）
+  Future<List<MoodRecord>> recentMoods({int days = 7}) {
+    final DateTime now = DateTime.now();
+    final DateTime start =
+        DateTime(now.year, now.month, now.day).subtract(Duration(days: days));
+    final Selectable<MoodRecord> q = select(moodRecords)
+      ..where(($MoodRecordsTable tbl) => tbl.createdAt.isBiggerOrEqualValue(start))
+      ..orderBy([($MoodRecordsTable tbl) => OrderingTerm.asc(tbl.createdAt)]);
+    return q.get();
+  }
+
   Future<int> addMood(String label, int intensity, {String source = 'chat'}) =>
       into(moodRecords).insert(MoodRecordsCompanion.insert(
         moodLabel: label,

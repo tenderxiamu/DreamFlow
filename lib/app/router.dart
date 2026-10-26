@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/df_llm.dart';
+import '../data/light_sleep.dart';
+import '../data/report_aggregator.dart';
+import '../data/sleep_session_recorder.dart';
 import '../design_system/df_theme.dart';
 import '../design_system/widgets/df_states.dart';
 import '../screens/df_chat_session.dart';
@@ -24,6 +27,23 @@ final DfLlmClient dfLlmClient = DfLlmClient();
 /// - 二级页 E 唤醒 / D 报告 / 状态页：root navigator push，统一 t-paper
 ///   主题归属（§5：B/C=夜墨，E/D=宣纸），由 [_paperPage] 包裹。
 /// Tab 切换由屏幕自身 onTab(int) 回调驱动 goBranch。
+
+/// M5：系统通知点击回调（payload = 路由），把用户带回 E 屏
+void handleNotificationTap(String? payload) {
+  final BuildContext? ctx = rootNavigatorKey.currentContext;
+  if (ctx != null && payload != null && payload.startsWith('/')) {
+    GoRouter.of(ctx).go(payload);
+  }
+}
+
+/// M5：浅睡窗口对齐后的唤醒时刻（HH:mm）；无进行中会话时返回 null
+String? lightWindowWakeLabel() {
+  final DateTime? start = SleepSessionRecorder.instance.startedAt;
+  if (start == null) return null;
+  final DateTime aligned = alignToLightWindow(start, DateTime.now());
+  return '${aligned.hour.toString().padLeft(2, '0')}:'
+      '${aligned.minute.toString().padLeft(2, '0')}';
+}
 Widget _paperPage(BuildContext context, Widget child) {
   return Theme(data: DfTheme.paperTheme(context), child: child);
 }
@@ -58,7 +78,9 @@ StatefulShellRoute buildShellRoute() {
         GoRoute(
           path: '/sleep',
           builder: (BuildContext context, GoRouterState state) =>
-              DfSleepFlow(onFinished: () => context.go('/wakeup')),
+              DfSleepFlow(
+                  onFinished: () => context.go('/wakeup'),
+                  recordSession: true),
         ),
       ]),
     ],
@@ -78,14 +100,19 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
           context,
           DfWakeFlow(
             onRetryReport: () => context.go('/report'),
+            recordSession: true,
+            reportLoader: aggregateLatestReport,
+            wakeTime: lightWindowWakeLabel() ?? '06:42',
           ),
         ),
       ),
       GoRoute(
         path: '/report',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (BuildContext context, GoRouterState state) =>
-            _paperPage(context, const DfReportScreen()),
+        builder: (BuildContext context, GoRouterState state) => _paperPage(
+          context,
+          DfReportScreen(loader: aggregateLatestReport),
+        ),
       ),
       GoRoute(
         path: '/states/:kind',

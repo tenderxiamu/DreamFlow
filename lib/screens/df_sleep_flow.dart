@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:dreamflow/audio/df_soundscape.dart';
+import 'package:dreamflow/data/sleep_session_recorder.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
 import 'package:dreamflow/design_system/widgets/df_controls.dart';
@@ -30,6 +31,7 @@ class DfSleepFlow extends StatefulWidget {
     this.tickInterval = const Duration(seconds: 1),
     this.step = 0.02,
     this.onFinished,
+    this.recordSession = false,
   });
 
   final bool startPlaying;
@@ -45,6 +47,10 @@ class DfSleepFlow extends StatefulWidget {
 
   /// 播完（进度到 1.0）时回调一次
   final VoidCallback? onFinished;
+
+  /// M5：true 时开启睡眠会话记录（记入睡时刻 + 预约唤醒通知）。
+  /// 测试 / 画廊保持 false，不触碰数据库。
+  final bool recordSession;
 
   /// 音景库（§6.13 场景 + §7 C 标题）
   static const List<String> soundscapes = <String>['深海洄游', '远山松风', '檐下雨声'];
@@ -72,6 +78,8 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
     super.initState();
     _progress = widget.startProgress.clamp(0.0, 1.0);
     _playing = widget.startPlaying;
+    // M5：开启会话记录（记入睡时刻 + 预约浅睡窗口唤醒通知）
+    if (widget.recordSession) SleepSessionRecorder.instance.begin();
     // M3：有真实音频控制器时，跟随播放器状态（含锁屏/通知栏控制）
     final DfSoundscapeController? audio = _audio;
     if (audio != null) {
