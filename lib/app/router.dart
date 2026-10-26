@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../data/df_llm.dart';
 import '../design_system/df_theme.dart';
 import '../design_system/widgets/df_states.dart';
 import '../screens/df_chat_session.dart';
@@ -13,6 +14,9 @@ import '../screens/df_wake_flow.dart';
 
 /// 全局路由 Key（DfScreenScaffold 自绘界面不走 AppBar）。
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// M4：LLM 客户端（懒创建；请求失败时屏内自动回退规则引擎）
+final DfLlmClient dfLlmClient = DfLlmClient();
 
 /// §7 屏幕流转（落地区）：
 /// - Tab 三分支（IndexedStack 保状态）：A 首页 / B 对话 / C 助眠
@@ -45,7 +49,9 @@ StatefulShellRoute buildShellRoute() {
         GoRoute(
           path: '/chat',
           builder: (BuildContext context, GoRouterState state) =>
-              DfChatSession(onEnterSleep: () => context.go('/sleep')),
+              DfChatSession(
+                  onEnterSleep: () => context.go('/sleep'),
+                  llm: dfLlmClient),
         ),
       ]),
       StatefulShellBranch(routes: <RouteBase>[

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:dreamflow/data/db.dart';
+import 'package:dreamflow/data/df_llm.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
 import 'package:dreamflow/design_system/widgets/df_controls.dart';
@@ -41,12 +43,13 @@ class _EngineReply {
 ///
 /// 与静态稿 [DfChatScreen] 的关系：视觉规格一致（同款气泡 / chip / 输入区 / 免责注脚），
 /// 只是把写死的三条示例气泡换成会话状态：
-/// - 输入并发送 → 我方气泡上屏 → 延时生成对方回复（[replyDelay] 可注入以加速测试）
-/// - 按关键词更新「此刻识别到的情绪」chip
+/// - 输入并发送 → 我方气泡上屏 → [llm] 非空时流式调真实模型（M4），否则走规则引擎
+/// - 回复末尾的情绪标记解析为「此刻识别到的情绪」chip，并落 MoodRecords 表
+/// - 对话历史持久化到 ChatMessages 表，作为后续轮次的模型上下文
 /// - 交流两轮后给出「就去睡吧」出口（接入 §7 C 沉浸助眠）
 ///
-/// 会话引擎是**确定性**规则，不联网、不调用模型；分诊顺序：提问 → 情绪 → 回声兜底。
-/// 接真实 NLP 时只需替换 [_engine]。
+/// 网络失败 / 无可用模型时回退到确定性规则引擎（不联网、不调用模型），
+/// 并在输入区给出错误提示；保证离线时核心陪伴体验可用。
 class DfChatSession extends StatefulWidget {
   const DfChatSession({
     super.key,
@@ -54,6 +57,7 @@ class DfChatSession extends StatefulWidget {
     this.replyDelay = const Duration(milliseconds: 1200),
     this.onEnterSleep,
     this.chatTime = '22:41',
+    this.llm,
   });
 
   /// 开场消息（缺省为设计稿示例三条）
@@ -65,6 +69,16 @@ class DfChatSession extends StatefulWidget {
   /// 进入 §7 C 沉浸助眠（交流两轮后出现「就去睡吧」出口）
   final VoidCallback? onEnterSleep;
   final String chatTime;
+
+  /// 真实 LLM 客户端（M4）。null → 规则引擎虚拟回复（测试 / 离线兜底）。
+  final DfLlmClient? llm;
+
+  /// 模型上下文里的 system 消息（B 屏人设 + 免责边界 + 情绪标记格式）
+  static const String systemPrompt =
+      '你是「梦洄」，睡前情绪陪伴应用里的虚拟伙伴。语气温柔、克制、口语化，每次回复不超过 80 字。'
+      '原则：共情优先，不诊断、不给医疗建议；用户表达自我伤害念头时，温和地建议联系专业帮助。'
+      '每次回复末尾必须另起一行输出情绪识别结果，格式严格为：【情绪:标签·强度:低|中|高】，'
+      '标签从 焦虑/疲惫/低落/烦躁/入睡困难/平静 中选最贴切的一个，无法判断时用【情绪:未知·强度:中】。';
 
   /// 设计稿示例开场（§7 B）
   static const List<DfMessage> opening = <DfMessage>[
@@ -87,6 +101,11 @@ class _DfChatSessionState extends State<DfChatSession> {
   bool _awaitingReply = false;
   List<String> _chips = const <String>['焦虑', '疲惫'];
   String? _errorText;
+  StreamSubscription<String>? _replySub;
+
+  /// 本会话的对话关联 ID（应用自管；同一会话内复用）
+  late final String _conversationId =
+      'df-${DateTime.now().microsecondsSinceEpoch}';
 
   /// 本次会话中用户是否发过消息（种子历史不计）
   bool _sentOnce = false;
@@ -105,6 +124,7 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   @override
   void dispose() {
+    _replySub?.cancel();
     _replyTimer?.cancel();
     _input.dispose();
     super.dispose();
@@ -117,25 +137,154 @@ class _DfChatSessionState extends State<DfChatSession> {
       setState(() => _errorText = '至少说一句话');
       return;
     }
-    final _EngineReply reply = _engine(text);
     setState(() {
       _errorText = null;
       _sentOnce = true;
       _messages.add(DfMessage(text, mine: true));
-      // 仅情绪倾诉时更新 chip；提问 / 闲聊保持原样（别拿情绪标签盖住用户的实际问题）
-      if (reply.chips != null) _chips = reply.chips!;
       _awaitingReply = true;
     });
     _input.clear();
 
-    _replyTimer?.cancel();
-    _replyTimer = Timer(widget.replyDelay, () {
-      if (!mounted) return;
-      setState(() {
-        _awaitingReply = false;
-        _messages.add(DfMessage(reply.text, emphasis: reply.emphasis));
+    final DfLlmClient? llm = widget.llm;
+    if (llm != null) {
+      _replySub?.cancel();
+      _sendViaLlm(llm, text);
+    } else {
+      // 规则引擎（离线 / 测试）：情绪命中即更新 chip
+      final _EngineReply reply = _engine(text);
+      if (reply.chips != null) {
+        setState(() => _chips = reply.chips!);
+      }
+      _replyTimer?.cancel();
+      _replyTimer = Timer(widget.replyDelay, () {
+        if (!mounted) return;
+        setState(() {
+          _awaitingReply = false;
+          _messages.add(DfMessage(reply.text, emphasis: reply.emphasis));
+        });
       });
+    }
+  }
+
+  // ── M4：真实模型链路 ──────────────────────────────────────────────────
+
+  /// 情绪标记（回复末尾）：【情绪:标签·强度:低|中|高】
+  static final RegExp _moodTagPattern =
+      RegExp(r'【情绪[:：]([^·|】]+)·\s*强度[:：](低|中|高)】');
+
+  Future<void> _sendViaLlm(DfLlmClient llm, String userText) async {
+    // 历史持久化 + 上下文（本地库是上下文来源；失败不阻塞对话）
+    List<DfLlmMessage> context = <DfLlmMessage>[
+      const DfLlmMessage('system', DfChatSession.systemPrompt),
+      DfLlmMessage('user', userText),
+    ];
+    try {
+      final List<ChatMessage> recent = await DreamFlowDb.instance
+          .recentMessages(limit: 12)
+          .timeout(const Duration(seconds: 2), onTimeout: () => <ChatMessage>[]);
+      if (recent.isNotEmpty) {
+        context = <DfLlmMessage>[
+          const DfLlmMessage('system', DfChatSession.systemPrompt),
+          for (final ChatMessage m in recent)
+            DfLlmMessage(m.mine ? 'user' : 'assistant', m.body),
+          DfLlmMessage('user', userText),
+        ];
+      }
+      await DreamFlowDb.instance
+          .addChatMessage(mine: true, text: userText)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 本地库不可用不阻断对话
+    }
+
+    // 占位气泡，流式追加
+    final int bubbleIndex = _messages.length;
+    setState(() => _messages.add(const DfMessage('')));
+    final StringBuffer acc = StringBuffer();
+
+    try {
+      await for (final String delta
+          in llm.chat(messages: context, conversationId: _conversationId)) {
+        acc.write(delta);
+        if (mounted) {
+          setState(() => _messages[bubbleIndex] = DfMessage(acc.toString()));
+        }
+      }
+      await _finishLlmReply(acc.toString(), bubbleIndex: bubbleIndex);
+    } on DfLlmException catch (e) {
+      if (acc.isEmpty) {
+        // 一个字都没到 → 规则引擎兜底，保证陪伴不中断
+        await _finishLlmReply(null,
+            bubbleIndex: bubbleIndex, fallback: _engine(userText), error: e.message);
+      } else {
+        // 已有部分回复 → 保留已渲染文本，仅提示
+        await _finishLlmReply(acc.toString(),
+            bubbleIndex: bubbleIndex, error: '${e.message}（以上内容已保留）');
+      }
+    } catch (_) {
+      await _finishLlmReply(
+        acc.isEmpty ? null : acc.toString(),
+        bubbleIndex: bubbleIndex,
+        fallback: acc.isEmpty ? _engine(userText) : null,
+        error: '网络出了点状况',
+      );
+    }
+  }
+
+  /// 收尾：解析情绪标记 → chip + MoodRecords 落库；持久化助手消息；恢复输入
+  Future<void> _finishLlmReply(
+    String? text, {
+    required int bubbleIndex,
+    _EngineReply? fallback,
+    String? error,
+  }) async {
+    String? emphasis;
+    String shown = text ?? '';
+    List<String>? chips;
+
+    if (text != null) {
+      final RegExpMatch? tag = _moodTagPattern.firstMatch(text);
+      if (tag != null) {
+        final String label = tag.group(1)!.trim();
+        final String strength = tag.group(2)!;
+        chips = label == '未知' ? null : <String>[label];
+        shown = text.replaceFirst(tag.group(0)!, '').trim();
+        if (label != '未知') {
+          final int intensity =
+              strength == '高' ? 5 : (strength == '中' ? 3 : 1);
+          try {
+            await DreamFlowDb.instance
+                .addMood(label, intensity)
+                .timeout(const Duration(seconds: 2));
+          } catch (_) {/* 落库失败不阻断 */}
+        }
+      }
+    }
+
+    if (fallback != null) {
+      shown = fallback.text;
+      emphasis = fallback.emphasis;
+      if (chips == null && fallback.chips != null) chips = fallback.chips;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _awaitingReply = false;
+      if (error != null) _errorText = error;
+      // 占位气泡（无论真实回复还是兜底回复）都原位替换
+      if (shown.isNotEmpty) {
+        _messages[bubbleIndex] = DfMessage(shown, emphasis: emphasis);
+      }
+      if (chips != null) _chips = chips;
     });
+
+    if (text != null && shown.isNotEmpty) {
+      try {
+        await DreamFlowDb.instance
+            .addChatMessage(mine: false, text: shown)
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {/* 落库失败不阻断 */}
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────

@@ -23,12 +23,32 @@ class SleepSessions extends Table {
   TextColumn get note => text().nullable()();
 }
 
-@DriftDatabase(tables: [MoodRecords, SleepSessions])
+/// M4：对话历史（B 屏）。离线优先：LLM 对话上下文与历史回放都在本地。
+class ChatMessages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  BoolColumn get mine => boolean()(); // true=用户，false=梦洄
+  TextColumn get body => text()(); // 消息正文（列名不能用 text，与 Table.text 冲突）
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+}
+
+@DriftDatabase(tables: [MoodRecords, SleepSessions, ChatMessages])
 class DreamFlowDb extends _$DreamFlowDb {
   DreamFlowDb() : super(driftDatabase(name: 'dreamflow'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (Migrator m, int from, int to) async {
+          if (from < 2) {
+            await m.createTable(chatMessages);
+          }
+        },
+      );
+
+  /// 全局单例（UI 直接取用；一次 app 生命周期一个库连接）
+  static final DreamFlowDb instance = DreamFlowDb();
 
   // ---- 查询骨架（M3-M5 逐屏接数据） ----
 
@@ -59,4 +79,21 @@ class DreamFlowDb extends _$DreamFlowDb {
 
   Future<int> addSession(SleepSessionsCompanion entry) =>
       into(sleepSessions).insert(entry);
+
+  // ---- M4：对话历史 ----
+
+  Future<int> addChatMessage({required bool mine, required String text}) =>
+      into(chatMessages).insert(ChatMessagesCompanion.insert(
+        mine: mine,
+        body: text,
+      ));
+
+  /// 最近 N 条（升序返回，直接可作为 LLM messages 上下文）
+  Future<List<ChatMessage>> recentMessages({int limit = 12}) async {
+    final Selectable<ChatMessage> q = select(chatMessages)
+      ..orderBy([($ChatMessagesTable tbl) => OrderingTerm.desc(tbl.createdAt)])
+      ..limit(limit);
+    final List<ChatMessage> rows = await q.get();
+    return rows.reversed.toList();
+  }
 }
