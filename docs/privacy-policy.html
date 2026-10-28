@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>梦洄 DreamFlow · 隐私政策</title>
+<style>
+  :root{
+    --ink:#14161A; --ink-2:#1B1E24; --card:#20242B;
+    --text:#F2F0EA; --text-2:#9BA3AF; --text-3:#6E7683;
+    --mist:#B9C6D8; --pink:#D4B0AC; --line:rgba(255,255,255,.09);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ink); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+    line-height:1.85; font-size:16px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:720px;margin:0 auto;padding:56px 22px 96px}
+  header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:38px}
+  .brand{font-size:13px;letter-spacing:.22em;color:var(--text-3);text-transform:uppercase}
+  h1{font-size:29px;line-height:1.4;margin:14px 0 10px;font-weight:600;letter-spacing:.01em}
+  .meta{font-size:13px;color:var(--text-3);letter-spacing:.03em}
+  h2{font-size:19px;margin:44px 0 14px;font-weight:600;letter-spacing:.02em}
+  h2 .n{color:var(--pink);font-variant-numeric:tabular-nums;margin-right:10px;font-size:15px}
+  h3{font-size:15.5px;margin:24px 0 8px;color:var(--mist);font-weight:600}
+  p{margin:0 0 14px;color:#DDDAD2}
+  ul{margin:0 0 16px;padding-left:20px}
+  li{margin:0 0 8px;color:#DDDAD2}
+  li strong{color:var(--text)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;margin:20px 0}
+  .card p:last-child,.card ul:last-child{margin-bottom:0}
+  .lead{font-size:17px;color:#E8E5DD;background:linear-gradient(180deg,rgba(212,176,172,.10),rgba(185,198,216,.06));
+        border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin-bottom:8px}
+  table{width:100%;border-collapse:collapse;margin:8px 0 18px;font-size:14.5px}
+  th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mist);font-weight:600;white-space:nowrap}
+  td{color:#D6D3CB}
+  td:first-child{white-space:nowrap;color:#EAE7DF}
+  code{background:rgba(255,255,255,.07);padding:1px 6px;border-radius:5px;font-size:13.5px}
+  a{color:var(--mist);text-decoration:none;border-bottom:1px solid rgba(185,198,216,.35)}
+  footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);font-size:13px;color:var(--text-3)}
+  .toc{font-size:14px;color:var(--text-2)}
+  .toc a{display:inline-block;margin:0 0 8px;padding:5px 12px;border:1px solid var(--line);
+             border-radius:999px;color:var(--text-2);font-size:13.5px}
+  .toc{gap:8px}
+  .toc a:hover{color:var(--text)}
+  @media (max-width:480px){ .wrap{padding:40px 18px 80px} h1{font-size:24px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">DreamFlow</div>
+  <h1>梦洄 · 隐私政策</h1>
+  <div class="meta">生效日期：2026 年 10 月 28 日　·　最近更新：2026 年 10 月 28 日　·　版本 1.0</div>
+</header>
+
+<div class="lead">
+  梦洄是一款助眠与情绪陪伴应用。我们把「你的睡眠与情绪数据属于你」当作设计前提：
+  <strong>情绪记录、睡眠会话、对话历史全部只保存在你的手机本地</strong>，不上传、不建账号、不做画像，
+  也不含任何广告或第三方统计 SDK。唯一会离开设备的是你在「情绪对话」里输入的文本，
+  它会被发送到云端大模型以生成回复，且不做留存用于训练。
+</div>
+
+<div class="toc">
+  <a href="#s1">1. 我们收集什么</a>
+  <a href="#s2">2. 数据存在哪里</a>
+  <a href="#s3">3. 云端对话如何处理</a>
+  <a href="#s4">4. 权限与用途</a>
+  <a href="#s5">5. 第三方组件</a>
+  <a href="#s6">6. 你的权利</a>
+  <a href="#s7">7. 儿童隐私</a>
+  <a href="#s8">8. 安全</a>
+  <a href="#s9">9. 政策更新</a>
+  <a href="#s10">10. 联系我们</a>
+</div>
+
+<h2 id="s1"><span class="n">01</span>我们收集什么</h2>
+<p>梦洄没有账号系统，不要求你注册、登录或填写手机号、邮箱。我们只处理以下几类数据，且都由你自己在应用内产生：</p>
+
+<table>
+  <tr><th>数据</th><th>内容</th><th>产生方式</th></tr>
+  <tr><td>情绪记录</td><td>情绪标签（如「疲惫」「平静」）与强度值、记录时间</td><td>你在对话中表达后自动写入本地</td></tr>
+  <tr><td>睡眠会话</td><td>入睡时刻、醒来时刻、时长、夜间醒来次数</td><td>你点击「开始助眠」与「我醒了」时记录</td></tr>
+  <tr><td>对话历史</td><td>你发送的文字与模型回复的文字</td><td>你在「情绪对话」中发送时记录</td></tr>
+  <tr><td>偏好设置</td><td>音景选择、唤醒方式等</td><td>你在设置中调整时保存</td></tr>
+</table>
+
+<p>我们不收集：位置、通讯录、短信、通话记录、相册、设备唯一标识符（IMEI / IDFA / OAID）、剪贴板内容、已安装应用列表。</p>
+
+<h2 id="s2"><span class="n">02</span>数据存在哪里</h2>
+<p>上述记录全部写入应用私有目录下的本地数据库（SQLite）。该目录受操作系统沙盒保护，其他应用无法读取；</p>
+<ul>
+  <li>卸载应用时，这些数据会随应用一起被系统删除；</li>
+  <li>卸载前如需保留，可在系统设置中使用「导出」或通过备份功能处理（视系统能力而定）；</li>
+  <li>我们不设服务器端数据库，因此不存在「后台保留了你已删除的记录」这种情况。</li>
+</ul>
+
+<h2 id="s3"><span class="n">03</span>云端对话如何处理</h2>
+<div class="card">
+  <p><strong>发送内容：</strong>仅限你在「情绪对话」输入框里主动发送的文本，以及为保持上下文连贯而附带的最少数轮近期对话。</p>
+  <p><strong>接收方：</strong>WorkBuddy 云服务提供的大语言模型推理接口（传输全程 HTTPS 加密）。</p>
+  <p><strong>用途：</strong>仅用于生成这次回复，返回后即结束，不用于模型训练、不做用户画像、不用于广告投放。</p>
+  <p><strong>你可以拒绝：</strong>不输入任何内容、不使用对话功能时，不会有任何数据离开设备。断网或服务不可用时，应用会自动改用内置的本地回复逻辑，不发送数据。</p>
+</div>
+<p>请避免在对话中填写身份证号、银行卡号、详细住址等敏感个人信息——这些内容并不为功能所需。</p>
+
+<h2 id="s4"><span class="n">04</span>权限与用途</h2>
+<table>
+  <tr><th>权限</th><th>用途</th><th>可否拒绝</th></tr>
+  <tr><td>网络访问</td><td>发送对话文本、接收模型回复</td><td>可拒绝，拒绝后对话改用本地逻辑</td></tr>
+  <tr><td>通知</td><td>后台播放音景时的媒体控制、唤醒提醒</td><td>可拒绝，拒绝后无唤醒提醒</td></tr>
+  <tr><td>精确闹钟</td><td>在你设定的浅睡窗口准时触发唤醒</td><td>可拒绝，拒绝后唤醒可能延迟</td></tr>
+  <tr><td>前台服务 / 唤醒锁</td><td>锁屏后继续播放雨声、海浪等音景</td><td>可拒绝，拒绝后锁屏会停止播放</td></tr>
+</table>
+<p>应用未申请麦克风、相机、位置、通讯录、短信等权限。对话中的语音按钮为后续版本预留，当前版本不会录音。</p>
+
+<h2 id="s5"><span class="n">05</span>第三方组件</h2>
+<p>应用内使用的开源组件（音频播放、本地数据库、通知调度等）均在本机运行，不上报任何使用数据。我们<strong>不集成</strong>广告 SDK、行为分析 SDK、崩溃上报 SDK 或社交登录 SDK。</p>
+<p>音景素材来自 Pixabay，依据 Pixabay Content License 使用，不涉及用户数据。</p>
+
+<h2 id="s6"><span class="n">06</span>你的权利</h2>
+<ul>
+  <li><strong>查看与更正：</strong>所有记录都可在应用内查看；情绪与睡眠记录可随时重新记录覆盖。</li>
+  <li><strong>删除：</strong>可在应用内清除对话与记录，或直接卸载应用一次性删除全部本地数据。</li>
+  <li><strong>拒绝传输：</strong>不使对话功能即可完全避免任何数据离开设备。</li>
+</ul>
+
+<h2 id="s7"><span class="n">07</span>儿童隐私</h2>
+<p>梦洄面向成年人设计，不面向 14 周岁以下儿童。我们不会主动收集儿童个人信息；若你是监护人并发现儿童在未经同意的情况下使用了本应用，删除应用即可清除全部本地数据，也可通过下方方式联系我们。</p>
+
+<h2 id="s8"><span class="n">08</span>安全</h2>
+<p>本地数据依赖操作系统的应用沙盒与应用私有目录保护；云端请求使用 HTTPS 加密传输。由于我们不在服务端存储你的记录，也就不存在服务端数据泄露的风险面。请妥善保管设备锁屏密码，这是保护本地数据最有效的一道防线。</p>
+
+<h2 id="s9"><span class="n">09</span>政策更新</h2>
+<p>若功能变化导致数据处理方式改变，我们会在应用内提示并更新本页面，同时修改顶部的「最近更新」日期。继续使用即表示你接受更新后的政策。</p>
+
+<h2 id="s10"><span class="n">10</span>联系我们</h2>
+<p>对本政策有任何疑问、建议或投诉，可以通过以下方式联系：</p>
+<ul>
+  <li>GitHub Issues：<a href="https://github.com/tenderxiamu/DreamFlow/issues">github.com/tenderxiamu/DreamFlow/issues</a></li>
+  <li>邮箱：<code>dreamflow.app@outlook.com</code>（替换为你自己的联系邮箱后发布）</li>
+</ul>
+
+<footer>
+  梦洄 DreamFlow · 本页面为独立静态页，可部署在任意静态托管（GitHub Pages / Vercel / 对象存储）后作为商店的隐私政策链接。
+</footer>
+
+</div>
+</body>
+</html>
