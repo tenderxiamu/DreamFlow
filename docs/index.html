@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>梦洄 DreamFlow</title>
+<meta name="description" content="梦洄 DreamFlow · 睡前音景与浅睡唤醒。隐私政策与健康免责声明入口。">
+<style>
+  :root{
+    --ink:#14161A; --card:#20242B;
+    --text:#F2F0EA; --text-2:#9BA3AF; --text-3:#6E7683;
+    --mist:#B9C6D8; --pink:#D4B0AC; --line:rgba(255,255,255,.09);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--ink); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+    line-height:1.8; font-size:16px; -webkit-font-smoothing:antialiased;
+    display:flex; align-items:center; justify-content:center;
+    background-image:radial-gradient(120% 80% at 50% 0%, #263248 0%, #191D24 55%, #14161A 100%);
+  }
+  .wrap{width:100%; max-width:560px; padding:56px 22px 72px; text-align:center}
+  .icon{width:104px;height:104px;border-radius:26px;display:block;margin:0 auto 26px;
+        box-shadow:0 18px 44px rgba(0,0,0,.45)}
+  .brand{font-size:12px;letter-spacing:.26em;color:var(--text-3);text-transform:uppercase}
+  h1{font-size:30px;margin:12px 0 10px;font-weight:600;letter-spacing:.02em}
+  .tag{font-size:14.5px;color:var(--text-2);margin:0 0 34px}
+  .links{display:flex;flex-direction:column;gap:12px;margin:0 0 30px}
+  a.item{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:16px 20px;color:var(--text);text-decoration:none;
+    transition:border-color .18s ease, transform .18s ease;
+  }
+  a.item:hover{border-color:rgba(212,176,172,.5);transform:translateY(-1px)}
+  a.item .t{font-size:16px}
+  a.item .d{display:block;font-size:12.5px;color:var(--text-3);margin-top:2px}
+  a.item .arw{color:var(--pink);font-size:15px}
+  .note{font-size:13px;color:var(--text-3);border-top:1px solid var(--line);padding-top:22px;margin-top:8px}
+  .note a{color:var(--mist);text-decoration:none;border-bottom:1px solid rgba(185,198,216,.35)}
+  @media (max-width:480px){ .wrap{padding:44px 18px 56px} h1{font-size:26px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <img class="icon" src="icon.png" alt="梦洄图标">
+  <div class="brand">DreamFlow</div>
+  <h1>梦洄</h1>
+  <p class="tag">睡前音景 · 情绪陪伴 · 浅睡唤醒</p>
+
+  <div class="links">
+    <a class="item" href="privacy-policy.html">
+      <span>
+        <span class="t">隐私政策</span>
+        <span class="d">数据只留在你手机里</span>
+      </span>
+      <span class="arw">→</span>
+    </a>
+    <a class="item" href="health-disclaimer.html">
+      <span>
+        <span class="t">健康免责声明</span>
+        <span class="d">非医疗器械 · 数据为估算值</span>
+      </span>
+      <span class="arw">→</span>
+    </a>
+  </div>
+
+  <div class="note">
+    © 2026 白日梦　·　问题与建议请提 <a href="https://github.com/tenderxiamu/DreamFlow/issues">GitHub Issues</a>
+  </div>
+
+</div>
+</body>
+</html>
