@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import 'package:dreamflow/data/db.dart';
 import 'package:dreamflow/data/df_llm.dart';
+import 'package:dreamflow/data/df_persona.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
 import 'package:dreamflow/design_system/widgets/df_controls.dart';
@@ -77,12 +79,9 @@ class DfChatSession extends StatefulWidget {
   /// 真实 LLM 客户端（M4）。null → 规则引擎虚拟回复（测试 / 离线兜底）。
   final DfLlmClient? llm;
 
-  /// 模型上下文里的 system 消息（B 屏人设 + 免责边界 + 情绪标记格式）
-  static const String systemPrompt =
-      '你是「梦洄」，睡前情绪陪伴应用里的虚拟伙伴。语气温柔、克制、口语化，每次回复不超过 80 字。'
-      '原则：共情优先，不诊断、不给医疗建议；用户表达自我伤害念头时，温和地建议联系专业帮助。'
-      '每次回复末尾必须另起一行输出情绪识别结果，格式严格为：【情绪:标签·强度:低|中|高】，'
-      '标签从 焦虑/疲惫/低落/烦躁/入睡困难/平静 中选最贴切的一个，无法判断时用【情绪:未知·强度:中】。';
+  /// 模型上下文里的 system 消息由 [DfPersona.system] 运行时拼装
+  /// （人格 +「此刻」时间 + 聊到第几轮），这里不再放静态字符串。
+  /// 人设本身的约束见 `lib/data/df_persona.dart`。
 
   /// 引导话题：用户不想组织语言时，点一下就能开始
   static const List<String> topics = <String>[
@@ -92,19 +91,30 @@ class DfChatSession extends StatefulWidget {
     '不想说话，陪我待着',
   ];
 
-  /// 按时段的引导开场（这就是「引导型对话」的第一句）
+  /// 按时段的引导开场（这就是「引导型对话」的第一句）。
+  ///
+  /// 每个时段两套说法，按日期奇偶轮换，避免每天打开都是同一句。
   static String greetingFor(DateTime now) {
     final int h = now.hour;
+    final bool alt = now.day.isEven;
     if (h >= 5 && h < 11) {
-      return '早上好。昨晚睡得还好吗？想说两句就说，不想说，我们也安静待一会儿。';
+      return alt
+          ? '早上好。昨晚睡得还好吗？想说两句就说，不想说，我们也安静待一会儿。'
+          : '早。刚醒的头几分钟脑子最容易翻旧账，先别急着看手机，跟我说一句就行。';
     }
     if (h >= 11 && h < 17) {
-      return '下午好。这会儿心里还有什么挂着的事吗？说出来会轻一点。';
+      return alt
+          ? '下午好。这会儿心里还有什么挂着的事吗？说出来会轻一点。'
+          : '下午了。白天按下去的那些，这会儿是不是又冒出来了？';
     }
     if (h >= 17 && h < 23) {
-      return '晚上好。今天有什么放不下的，我们把它说完，再慢慢沉下去。';
+      return alt
+          ? '晚上好。今天有什么放不下的，我们把它说完，再慢慢沉下去。'
+          : '到晚上了。今天最想吐槽的是哪件事？先说它。';
     }
-    return '还没睡着吗？不用强迫自己。跟我说说，现在脑子里在转的是什么。';
+    return alt
+        ? '还没睡着吗？不用强迫自己。跟我说说，现在脑子里在转的是什么。'
+        : '这个点还醒着。别急，我也不催你睡，想说什么就说。';
   }
 
   @override
@@ -119,12 +129,24 @@ class _DfChatSessionState extends State<DfChatSession> {
   bool _awaitingReply = false;
   bool _loading = true;
 
+  /// 流式气泡的可见文本。用 [ValueNotifier] 而不是 setState：
+  /// 每个 token 只重建这一个气泡，不重建整屏（否则长对话会明显掉帧，
+  /// 体感上比模型本身还慢）。
+  final ValueNotifier<String> _streamText = ValueNotifier<String>('');
+
+  /// 是否正在流式输出（决定要不要渲染流式气泡）
+  bool _streaming = false;
+
+  /// 自动滚到底：流式增长时要一直能看到新字
+  final ScrollController _scroll = ScrollController();
+  Timer? _scrollTimer;
+  bool _scrollPending = false;
+
   /// 引导话题条：仅当**今天还没说过话**时出现
   bool _showTopics = false;
 
   List<String> _chips = const <String>[];
   String? _errorText;
-  StreamSubscription<String>? _replySub;
 
   /// 会话归属日（跨天检测用）
   late DateTime _sessionDay = _dayOf(DateTime.now());
@@ -134,6 +156,9 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   /// 本次会话中用户是否发过消息（种子历史不计）
   bool _sentOnce = false;
+
+  /// 今天已经聊过的轮数（喂给模型，避免每条回复都像刚认识）
+  int get _rounds => _messages.where((DfMessage m) => m.mine).length;
 
   /// 是否已完成一轮对话（**本次会话**发过 + 已收到回复）——出现「就去睡吧」出口的条件。
   bool get _hadRound => _sentOnce && !_awaitingReply;
@@ -151,14 +176,19 @@ class _DfChatSessionState extends State<DfChatSession> {
     super.initState();
     _conversationId = _dayKey(_sessionDay);
     _clock = Timer.periodic(const Duration(seconds: 30), (_) => _tickClock());
+    _streamText.addListener(_scheduleScrollToBottom);
+    // 预热云端连接：首次发消息少一次 RTT（失败无副作用）
+    widget.llm?.warmUp();
     _bootstrap();
   }
 
   @override
   void dispose() {
-    _replySub?.cancel();
     _replyTimer?.cancel();
     _clock?.cancel();
+    _scrollTimer?.cancel();
+    _streamText.dispose();
+    _scroll.dispose();
     _input.dispose();
     super.dispose();
   }
@@ -199,6 +229,8 @@ class _DfChatSessionState extends State<DfChatSession> {
       }
       _loading = false;
     });
+    // 恢复今天的记录后直接停在最新一条
+    _scheduleScrollToBottom();
   }
 
   /// 每 30s 走一次：刷新顶部时刻；跨过零点则自动新开一天的会话
@@ -223,6 +255,8 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   /// §12 缺口 3：空内容发起时走 field 错误态，而不是静默丢弃
   void _send() {
+    // 上一条还在流式输出时不接新消息，避免两个回复交错
+    if (_awaitingReply) return;
     final String text = _input.text.trim();
     if (text.isEmpty) {
       setState(() => _errorText = '至少说一句话');
@@ -239,7 +273,6 @@ class _DfChatSessionState extends State<DfChatSession> {
 
     final DfLlmClient? llm = widget.llm;
     if (llm != null) {
-      _replySub?.cancel();
       _sendViaLlm(llm, text);
     } else {
       // 规则引擎（离线 / 测试）：情绪命中即更新 chip
@@ -258,6 +291,7 @@ class _DfChatSessionState extends State<DfChatSession> {
             at: DateTime.now(),
           ));
         });
+        _scheduleScrollToBottom();
       });
     }
   }
@@ -268,81 +302,105 @@ class _DfChatSessionState extends State<DfChatSession> {
     _send();
   }
 
+  // ── 滚动跟随 ──────────────────────────────────────────────────────────
+  //
+  // 流式输出时内容一直在长，如果不跟着滚，"新字"落在屏幕外，用户会以为
+  // 卡住了 —— 这是体感「慢」的一大来源，比模型本身更影响观感。
+
+  void _scheduleScrollToBottom() {
+    if (!mounted || _scrollPending) return;
+    _scrollPending = true;
+    _scrollTimer?.cancel();
+    // 80ms 合并一次，避免每个 token 都触发一次布局
+    _scrollTimer = Timer(const Duration(milliseconds: 80), () {
+      _scrollPending = false;
+      if (!mounted || !_scroll.hasClients) return;
+      final double target = _scroll.position.maxScrollExtent;
+      if ((_scroll.offset - target).abs() < 4) return;
+      _scroll.jumpTo(target);
+    });
+  }
+
   // ── M4：真实模型链路 ──────────────────────────────────────────────────
 
-  /// 情绪标记（回复末尾）：【情绪:标签·强度:低|中|高】
-  static final RegExp _moodTagPattern =
-      RegExp(r'【情绪[:：]([^·|】]+)·\s*强度[:：](低|中|高)】');
-
   Future<void> _sendViaLlm(DfLlmClient llm, String userText) async {
-    // 上下文只取**今天**的消息（跨天不串味），并把本轮用户输入并入
-    List<DfLlmMessage> context = <DfLlmMessage>[
-      const DfLlmMessage('system', DfChatSession.systemPrompt),
-      DfLlmMessage('user', userText),
-    ];
-    try {
-      final List<ChatMessage> today = await DreamFlowDb.instance
-          .messagesOnDay(_sessionDay)
-          .timeout(const Duration(seconds: 2));
-      final List<ChatMessage> recent = today.length > 12
-          ? today.sublist(today.length - 12)
-          : today;
-      if (recent.isNotEmpty) {
-        context = <DfLlmMessage>[
-          const DfLlmMessage('system', DfChatSession.systemPrompt),
-          for (final ChatMessage m in recent)
-            DfLlmMessage(m.mine ? 'user' : 'assistant', m.body),
-          DfLlmMessage('user', userText),
-        ];
-      }
-    } catch (_) {
-      // 本地库不可用不阻断对话
-    }
-    try {
-      await DreamFlowDb.instance
-          .addChatMessage(mine: true, text: userText)
-          .timeout(const Duration(seconds: 2));
-    } catch (_) {/* 落库失败不阻断 */}
+    // ── 关键路径上只做一件事：把请求发出去 ──────────────────────────────
+    //
+    // 上下文直接从内存里的 [_messages] 拼（本轮用户消息已在 _send 里入列），
+    // 不再等数据库 —— 旧实现先 await 查库、再 await 落库，然后才发请求，
+    // 冷启动时白等几百毫秒。落库改成 fire-and-forget。
+    final List<DfLlmMessage> context = _buildContext();
+    _persistChat(mine: true, text: userText);
+    setState(() {
+      _streaming = true;
+      _streamText.value = '';
+    });
+    _scheduleScrollToBottom();
 
-    // 占位气泡，流式追加
-    final int bubbleIndex = _messages.length;
-    setState(() => _messages.add(const DfMessage('')));
     final StringBuffer acc = StringBuffer();
-
     try {
       await for (final String delta
           in llm.chat(messages: context, conversationId: _conversationId)) {
+        if (!mounted) break; // 用户切走页面 → 停止渲染（notifier 已销毁）
         acc.write(delta);
-        if (mounted) {
-          setState(() =>
-              _messages[bubbleIndex] = DfMessage(acc.toString(), at: DateTime.now()));
-        }
+        // 只推进 notifier，不触发整屏重建
+        _streamText.value = DfPersona.hidePartialTag(acc.toString());
       }
-      await _finishLlmReply(acc.toString(), bubbleIndex: bubbleIndex);
+      if (!mounted) return;
+      await _finishLlmReply(acc.toString());
     } on DfLlmException catch (e) {
       if (acc.isEmpty) {
         // 一个字都没到 → 规则引擎兜底，保证陪伴不中断
-        await _finishLlmReply(null,
-            bubbleIndex: bubbleIndex, fallback: _engine(userText), error: e.message);
+        await _finishLlmReply(null, fallback: _engine(userText), error: e.message);
       } else {
         // 已有部分回复 → 保留已渲染文本，仅提示
         await _finishLlmReply(acc.toString(),
-            bubbleIndex: bubbleIndex, error: '${e.message}（以上内容已保留）');
+            error: '${e.message}（以上内容已保留）');
       }
     } catch (_) {
       await _finishLlmReply(
         acc.isEmpty ? null : acc.toString(),
-        bubbleIndex: bubbleIndex,
         fallback: acc.isEmpty ? _engine(userText) : null,
         error: '网络出了点状况',
       );
     }
   }
 
+  /// 从内存消息拼上下文：system（人格 + 此刻 + 轮数）+ 最近 20 条。
+  ///
+  /// 只取最近 20 条是为了控制 prefill 体积（体积直接影响首字延迟），
+  /// 20 条足够覆盖一晚的睡前对话。
+  List<DfLlmMessage> _buildContext() {
+    const int keep = 20;
+    final List<DfMessage> recent = _messages.length > keep
+        ? _messages.sublist(_messages.length - keep)
+        : _messages;
+    return <DfLlmMessage>[
+      DfLlmMessage(
+        'system',
+        // _rounds 已包含本轮刚说的话，减 1 才是「之前聊过几轮」
+        DfPersona.system(
+          now: DateTime.now(),
+          round: _rounds > 0 ? _rounds - 1 : 0,
+        ),
+      ),
+      for (final DfMessage m in recent)
+        if (m.text.trim().isNotEmpty)
+          DfLlmMessage(m.mine ? 'user' : 'assistant', m.text),
+    ];
+  }
+
+  /// 落库不阻塞对话（失败也不影响这一晚的陪伴）
+  void _persistChat({required bool mine, required String text}) {
+    DreamFlowDb.instance
+        .addChatMessage(mine: mine, text: text)
+        .timeout(const Duration(seconds: 3))
+        .catchError((Object _) => 0);
+  }
+
   /// 收尾：解析情绪标记 → chip + MoodRecords 落库；持久化助手消息；恢复输入
   Future<void> _finishLlmReply(
     String? text, {
-    required int bubbleIndex,
     _EngineReply? fallback,
     String? error,
   }) async {
@@ -351,7 +409,7 @@ class _DfChatSessionState extends State<DfChatSession> {
     List<String>? chips;
 
     if (text != null) {
-      final RegExpMatch? tag = _moodTagPattern.firstMatch(text);
+      final RegExpMatch? tag = DfPersona.moodTag.firstMatch(text);
       if (tag != null) {
         final String label = tag.group(1)!.trim();
         final String strength = tag.group(2)!;
@@ -360,11 +418,10 @@ class _DfChatSessionState extends State<DfChatSession> {
         if (label != '未知') {
           final int intensity =
               strength == '高' ? 5 : (strength == '中' ? 3 : 1);
-          try {
-            await DreamFlowDb.instance
-                .addMood(label, intensity)
-                .timeout(const Duration(seconds: 2));
-          } catch (_) {/* 落库失败不阻断 */}
+          DreamFlowDb.instance
+              .addMood(label, intensity)
+              .timeout(const Duration(seconds: 3))
+              .catchError((Object _) => 0);
         }
       }
     }
@@ -377,24 +434,22 @@ class _DfChatSessionState extends State<DfChatSession> {
 
     if (!mounted) return;
     setState(() {
+      _streaming = false;
+      _streamText.value = '';
       _awaitingReply = false;
       if (error != null) _errorText = error;
-      // 占位气泡（无论真实回复还是兜底回复）都原位替换
       if (shown.isNotEmpty) {
-        _messages[bubbleIndex] =
-            DfMessage(shown, emphasis: emphasis, at: DateTime.now());
+        _messages.add(DfMessage(shown, emphasis: emphasis, at: DateTime.now()));
       }
       if (chips != null) _chips = chips;
     });
+    _scheduleScrollToBottom();
 
     if (text != null && shown.isNotEmpty) {
-      try {
-        await DreamFlowDb.instance
-            .addChatMessage(mine: false, text: shown)
-            .timeout(const Duration(seconds: 2));
-      } catch (_) {/* 落库失败不阻断 */}
+      _persistChat(mine: false, text: shown);
     }
   }
+
 
   // ───────────────────────────────────────────────────────────────────────
   // 会话引擎（确定性规则，不联网、不调模型；接真实 NLP 时只需替换 [_engine]）
@@ -518,6 +573,7 @@ class _DfChatSessionState extends State<DfChatSession> {
     final DateTime now = DateTime.now();
 
     return DfScreenScaffold(
+      scrollController: _scroll,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -584,6 +640,12 @@ class _DfChatSessionState extends State<DfChatSession> {
           else ...<Widget>[
             for (int i = 0; i < _messages.length; i++) ...<Widget>[
               _bubbleOf(_messages[i]),
+              const SizedBox(height: 12),
+            ],
+
+            // 流式气泡：只有它自己监听 notifier，整屏不跟着重建
+            if (_streaming) ...<Widget>[
+              _StreamBubble(text: _streamText),
               const SizedBox(height: 12),
             ],
 
@@ -710,6 +772,37 @@ class _DfChatSessionState extends State<DfChatSession> {
       // `text` 为 required；走富文本分支时传空串，仅用 [rich]
       text: '',
       rich: TextSpan(children: spans),
+    );
+  }
+}
+
+/// 正在流式输出的气泡。
+///
+/// 独立成 StatefulWidget 之外的关键：它只订阅 [_streamText]，
+/// 每个 token 只重绘本气泡，整屏（头部、Tab、历史气泡）不参与重建。
+class _StreamBubble extends StatelessWidget {
+  const _StreamBubble({required this.text});
+
+  final ValueListenable<String> text;
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    return ValueListenableBuilder<String>(
+      valueListenable: text,
+      builder: (BuildContext c, String v, Widget? _) {
+        if (v.isEmpty) {
+          // 等第一个 token 的那一两秒也要有反馈，否则像卡住了
+          return DfBubble(
+            text: '·  ·  ·',
+            rich: TextSpan(
+              text: '·  ·  ·',
+              style: DfType.bubble(context, p.text3),
+            ),
+          );
+        }
+        return DfBubble(text: v);
+      },
     );
   }
 }

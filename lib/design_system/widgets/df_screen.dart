@@ -17,6 +17,7 @@ class DfScreenScaffold extends StatelessWidget {
     this.bottomFullBleed = false,
     this.centerBody = false,
     this.scrollable = true,
+    this.scrollController,
   });
 
   final Widget body;
@@ -26,6 +27,9 @@ class DfScreenScaffold extends StatelessWidget {
   final bool bottomFullBleed;
   final bool centerBody;
   final bool scrollable;
+
+  /// 需要跟随内容自动滚动（对话流）时从外部注入
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +46,10 @@ class DfScreenScaffold extends StatelessWidget {
     );
 
     if (scrollable && !centerBody) {
-      content = SingleChildScrollView(child: content);
+      content = SingleChildScrollView(
+        controller: scrollController,
+        child: content,
+      );
     }
 
     return DecoratedBox(
