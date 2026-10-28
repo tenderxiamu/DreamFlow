@@ -202,27 +202,18 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
             ],
           ),
           const SizedBox(height: 14),
-          // M6.9：有对应视频就用动态场景（浪 / 松风 / 雨 / 雾），
-          // 没有则退回原来的静态墨山，绝不空着
+          // 有对应视频就用动态场景（浪 / 松风 / 雨 / 雾），
+          // 没有则退回原来的静态墨山，绝不空着。
+          // 高度从 176 提到 240：画面是这一屏的主角，太小就只剩个色块
           if (sceneVideo == null)
-            const DfScene(height: 176)
+            const DfScene(height: 240)
           else
             DfVideoScene(
               asset: sceneVideo,
-              height: 176,
+              height: 240,
               playing: pb.playing,
-              fallback: const DfScene(height: 176),
+              fallback: const DfScene(height: 240),
             ),
-          const SizedBox(height: 14),
-          DfCard(
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: pb.playing ? 1.0 : 0.4),
-              duration: DfMotion.dur,
-              builder: (BuildContext context, double v, Widget? child) =>
-                  Opacity(opacity: v, child: child),
-              child: const DfWave(),
-            ),
-          ),
           const SizedBox(height: 12),
           _TimerCard(
             selected: _timerMinutes,

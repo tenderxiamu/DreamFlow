@@ -123,7 +123,17 @@ class _DfVideoSceneState extends State<DfVideoScene>
       unawaited(old.dispose());
     }
 
-    final VideoPlayerController c = VideoPlayerController.asset(asset);
+    // **必须传 mixWithOthers: true**，否则视频一开播就抢走音频焦点，
+    // 正在播的音景会被系统打断并暂停（表现为「点了播放没声音」）。
+    //
+    // 依据 video_player_android 的 VideoPlayer.java:99：
+    //   exoPlayer.setAudioAttributes(attrs, /* handleAudioFocus= */ !isMixMode);
+    // 默认 isMixMode=false → handleAudioFocus=true → 请求焦点。
+    // 置 true 后变成 false，视频只出画面，完全不碰音频栈。
+    final VideoPlayerController c = VideoPlayerController.asset(
+      asset,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
     try {
       await c.initialize();
       await c.setLooping(true);
@@ -180,29 +190,40 @@ class _DfVideoSceneState extends State<DfVideoScene>
                 builder: (BuildContext context, double v, Widget? child) =>
                     Opacity(opacity: v, child: child),
                 child: SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    clipBehavior: Clip.hardEdge,
-                    child: SizedBox(
-                      width: c.value.size.width,
-                      height: c.value.size.height,
-                      child: VideoPlayer(c),
+                  // 素材本身是深夜场景，原样贴上来偏闷；
+                  // 提亮 12% + 抬一点暗部（+8），既不刺眼也不会糊成一团黑
+                  child: ColorFiltered(
+                    colorFilter: const ColorFilter.matrix(<double>[
+                      1.12, 0, 0, 0, 8, //
+                      0, 1.12, 0, 0, 8, //
+                      0, 0, 1.12, 0, 8, //
+                      0, 0, 0, 1, 0, //
+                    ]),
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: c.value.size.width,
+                        height: c.value.size.height,
+                        child: VideoPlayer(c),
+                      ),
                     ),
                   ),
                 ),
               ),
-            // 压亮 + 与纸墨主题融合：上暗下更暗，模拟夜色落下来
+            // 只在上下边缘压一点夜色，让画面和卡片咬合；
+            // 中间完全不加遮罩 —— 之前压到 0.42/0.16/0.58，浪花细节全被吃掉了
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: <Color>[
-                    p.canvas.withValues(alpha: 0.42),
-                    p.canvas.withValues(alpha: 0.16),
-                    p.canvas.withValues(alpha: 0.58),
+                    p.canvas.withValues(alpha: 0.20),
+                    p.canvas.withValues(alpha: 0.0),
+                    p.canvas.withValues(alpha: 0.30),
                   ],
-                  stops: const <double>[0, 0.42, 1],
+                  stops: const <double>[0, 0.38, 1],
                 ),
               ),
             ),
