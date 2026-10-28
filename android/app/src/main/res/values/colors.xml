@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- M6：启动屏与自适应图标用色（夜墨 canvas，§5 令牌） -->
+    <!-- 启动屏用夜墨 canvas（§5 令牌），与 App 内首屏同色，避免白闪 -->
     <color name="launch_bg">#14161A</color>
-    <color name="launcher_adaptive_bg">#14161A</color>
+    <!-- 自适应图标兜底底色：取图标渐变中值（深夜蓝），仅在缺 mipmap 时使用 -->
+    <color name="launcher_adaptive_bg">#3E5372</color>
 </resources>

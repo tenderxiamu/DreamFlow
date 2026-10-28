@@ -30,8 +30,12 @@
 
 ## 图标与启动屏
 
-- 图标：`tool/make_icons.py` 生成（夜墨渐变 + 雾粉月牙 + 马善政体「梦」），
-  Android 全密度 mipmap + 自适应图标（`mipmap-anydpi-v26`）+ iOS 19 尺寸 AppIcon
+- 图标母稿：手绘蜡笔画 `tool/icon_source.png`（小虫趴在云上做梦，右上飘 Z）。
+- 生成脚本 `tool/make_icons.py`：色度抠图把笔触从原蓝底分离 → alpha 拉伸去雾斑 →
+  重新压在「深夜蓝」径向渐变底上 → 分平台导出（Android 传统/圆形/自适应前景+背景、
+  iOS 19 尺寸、Web）。改图只需替换 `icon_source.png` 后重跑脚本。
+- 自适应图标为分层结构：`@mipmap/ic_launcher_bg`（渐变）+ `ic_launcher_fg`（笔触，
+  图形占 108dp 画布 59%，确保圆形遮罩下不被切）
 - 启动屏：夜墨 `#14161A`（与首屏睡前模式无缝衔接），见 `res/drawable*/launch_background.xml`
 
 ## 构建（国内网络环境）
