@@ -20,6 +20,16 @@ class DreamFlowApp extends ConsumerWidget {
           ? DfTheme.nightTheme(context)
           : DfTheme.paperTheme(context),
       routerConfig: ref.watch(routerProvider),
+      // 关键修复：`MaterialApp` 会把 `_errorTextStyle`（黄色 + 双下划线 + monospace）
+      // 作为整棵树的根级 `DefaultTextStyle`（flutter/src/material/app.dart）。
+      // 本 App 的页面是自绘 `DfScreenScaffold`（DecoratedBox），没有 Material 覆盖它，
+      // 于是每条 Text 都继承了那条黄双线。这里在根部显式清空装饰。
+      builder: (BuildContext context, Widget? child) {
+        return DefaultTextStyle(
+          style: const TextStyle(decoration: TextDecoration.none),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

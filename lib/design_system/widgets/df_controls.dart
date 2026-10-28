@@ -512,6 +512,8 @@ class DfField extends StatelessWidget {
         color: p.text,
         fontFamily: DfFonts.body,
         fontFamilyFallback: DfFonts.fallbackBody,
+        // 显式清装饰：根级 DefaultTextStyle 带着 Flutter 的 _errorTextStyle 黄双下划线
+        decoration: TextDecoration.none,
       ),
       cursorColor: p.mistBlue,
       decoration: InputDecoration(
@@ -524,6 +526,7 @@ class DfField extends StatelessWidget {
           color: p.text3,
           fontFamily: DfFonts.body,
           fontFamilyFallback: DfFonts.fallbackBody,
+          decoration: TextDecoration.none,
         ),
         filled: true,
         fillColor: p.surface,

@@ -31,7 +31,7 @@ enum DfWakePhase { waking, snoozing, reportLoading, reportReady }
 class DfWakeFlow extends StatefulWidget {
   const DfWakeFlow({
     super.key,
-    this.wakeTime = '06:42',
+    this.wakeTime,
     this.snoozeDuration = const Duration(minutes: 5),
     this.tickInterval = const Duration(seconds: 1),
     this.loadDuration = const Duration(milliseconds: 900),
@@ -40,8 +40,8 @@ class DfWakeFlow extends StatefulWidget {
     this.reportLoader,
   });
 
-  /// 首次唤醒时刻；每次「再睡 5 分钟」后 +5 分钟
-  final String wakeTime;
+  /// 首次唤醒时刻（HH:mm）；null → 取系统当前时刻，绝不写死假时间
+  final String? wakeTime;
 
   final Duration snoozeDuration;
   final Duration tickInterval;
@@ -78,9 +78,23 @@ class _DfWakeFlowState extends State<DfWakeFlow> {
   }
 
   int get _baseMinutes {
-    final List<String> parts = widget.wakeTime.split(':');
+    final String given = widget.wakeTime ?? '';
+    if (given.isEmpty) {
+      final DateTime n = DateTime.now();
+      return n.hour * 60 + n.minute;
+    }
+    final List<String> parts = given.split(':');
     if (parts.length != 2) return 0;
     return (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+  }
+
+  /// 本次陪伴的真实时长（无进行中会话 → null，页面不显示该卡）
+  String? get _companionLabel {
+    final DateTime? start = SleepSessionRecorder.instance.startedAt;
+    if (start == null) return null;
+    final Duration d = DateTime.now().difference(start);
+    if (d.isNegative) return null;
+    return '${d.inHours}:${(d.inMinutes % 60).toString().padLeft(2, '0')}';
   }
 
   /// 起 6:42 → 再睡一次 6:47 ……（§7 E「再睡 5 分钟」语义）
@@ -150,6 +164,7 @@ class _DfWakeFlowState extends State<DfWakeFlow> {
       case DfWakePhase.waking:
         return DfWakeScreen(
           wakeTime: _currentWakeTime,
+          companionLabel: _companionLabel,
           onWakeUp: _openReport,
           onSnooze: _snooze,
         );
@@ -183,6 +198,13 @@ class _SnoozeView extends StatelessWidget {
   final String wakeTime;
   final VoidCallback onCancel;
 
+  /// 屏上时刻取系统时间
+  static String _nowHm() {
+    final DateTime n = DateTime.now();
+    return '${n.hour.toString().padLeft(2, '0')}:'
+        '${n.minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final DfPalette p = DfPalette.of(context);
@@ -200,13 +222,7 @@ class _SnoozeView extends StatelessWidget {
               children: <Widget>[
                 Semantics(
                   liveRegion: true,
-                  child: Text(
-                    remaining,
-                    style: DfType.title(context, p.text).copyWith(
-                          fontSize: DfFontSize.display,
-                          letterSpacing: DfFontSize.display * 0.04,
-                        ),
-                  ),
+                  child: Text(remaining, style: DfType.display(context, p.text)),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -228,7 +244,7 @@ class _SnoozeView extends StatelessWidget {
                   children: <Widget>[
                     Text('再睡一会儿', style: DfType.bodyS(context, p.text)),
                     Text(
-                      '05:00',
+                      _nowHm(),
                       style: DfType.caption(context, p.mistGreen).copyWith(
                             fontFeatures: const <FontFeature>[
                               FontFeature.tabularFigures(),

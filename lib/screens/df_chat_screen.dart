@@ -47,7 +47,7 @@ class DfChatScreen extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       '梦洄',
-                      style: DfType.bodyS(context, p.text).copyWith(fontSize: 16),
+                      style: DfType.body(context, p.text),
                     ),
                     const SizedBox(height: 2),
                     Row(

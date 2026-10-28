@@ -215,8 +215,9 @@ const List<({String label, int value})> _demoMoodBars = <({String label, int val
 ];
 
 DfReportData _demoData(BuildContext context) {
+  final DateTime yesterday = DateTime.now().subtract(const Duration(days: 1));
   return DfReportData(
-    dateLabel: '昨夜 · 10月10日',
+    dateLabel: '昨夜 · ${yesterday.month}月${yesterday.day}日',
     score: 82,
     summary: '入睡平稳，深睡充足，凌晨有一次短暂觉醒',
     deepLabel: '1:52',

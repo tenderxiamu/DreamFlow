@@ -73,6 +73,11 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
   /// 音景总时长（虚拟）：24:00 = 1440s
   static const int _totalSeconds = 1440;
 
+  /// 屏上时刻一律取系统时间，不写死
+  static String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
+
   @override
   void initState() {
     super.initState();
@@ -199,7 +204,10 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
                   ],
                 ),
               ),
-              Text('23:07', style: DfType.caption(context, p.text3)),
+              Text(
+                _hhmm(DateTime.now()),
+                style: DfType.caption(context, p.text3),
+              ),
             ],
           ),
           const SizedBox(height: 16),

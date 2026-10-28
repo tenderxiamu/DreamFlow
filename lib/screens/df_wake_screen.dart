@@ -14,16 +14,29 @@ class DfWakeScreen extends StatelessWidget {
     super.key,
     this.onWakeUp,
     this.onSnooze,
-    this.wakeTime = '06:42',
+    this.wakeTime = '',
+    this.companionLabel,
   });
 
   final VoidCallback? onWakeUp;
   final VoidCallback? onSnooze;
+
+  /// 唤醒时刻（HH:mm）；留空 → 取系统当前时刻（不写死假时间）
   final String wakeTime;
+
+  /// 陪伴时长（如「7:58」）；null = 无进行中会话，整卡不显示
+  final String? companionLabel;
+
+  static String _nowHm() {
+    final DateTime n = DateTime.now();
+    return '${n.hour.toString().padLeft(2, '0')}:'
+        '${n.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
     final DfPalette p = DfPalette.of(context);
+    final String clock = wakeTime.isEmpty ? _nowHm() : wakeTime;
 
     return DfScreenScaffold(
       body: Column(
@@ -36,13 +49,7 @@ class DfWakeScreen extends StatelessWidget {
             overlay: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(
-                  wakeTime,
-                  style: DfType.title(context, p.text).copyWith(
-                    fontSize: DfFontSize.display,
-                    letterSpacing: DfFontSize.display * 0.04,
-                  ),
-                ),
+                Text(clock, style: DfType.display(context, p.text)),
                 const SizedBox(height: 8),
                 Text('室温 24° · 湿度 52%', style: DfType.sub(context, p.text2)),
               ],
@@ -75,18 +82,20 @@ class DfWakeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          DfCard(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                Text('陪伴时长', style: DfType.bodyS(context, p.text2)),
-                Text(
-                  '7:58',
-                  style: DfType.number(context, DfFontSize.titleS, p.text),
-                ),
-              ],
+          // 只有真的存在进行中会话时才显示陪伴时长，否则宁可不显示也不编数字
+          if (companionLabel != null)
+            DfCard(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  Text('陪伴时长', style: DfType.bodyS(context, p.text2)),
+                  Text(
+                    companionLabel!,
+                    style: DfType.number(context, DfFontSize.titleS, p.text),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
       bottom: Column(

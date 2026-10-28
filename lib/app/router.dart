@@ -42,9 +42,13 @@ String? lightWindowWakeLabel() {
   final DateTime? start = SleepSessionRecorder.instance.startedAt;
   if (start == null) return null;
   final DateTime aligned = alignToLightWindow(start, DateTime.now());
-  return '${aligned.hour.toString().padLeft(2, '0')}:'
-      '${aligned.minute.toString().padLeft(2, '0')}';
+  return _hhmOf(aligned);
 }
+
+/// 系统当前时刻（HH:mm）—— 兜底值也必须是真实时间，不能写死
+String _hhmOf(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
 Widget _paperPage(BuildContext context, Widget child) {
   return Theme(data: DfTheme.paperTheme(context), child: child);
 }
@@ -69,10 +73,11 @@ StatefulShellRoute buildShellRoute() {
       StatefulShellBranch(routes: <RouteBase>[
         GoRoute(
           path: '/chat',
-          builder: (BuildContext context, GoRouterState state) =>
-              DfChatSession(
-                  onEnterSleep: () => context.go('/sleep'),
-                  llm: dfLlmClient),
+          builder: (BuildContext context, GoRouterState state) => DfChatSession(
+            onEnterSleep: () => context.go('/sleep'),
+            onTab: (int i) => StatefulNavigationShell.of(context).goBranch(i),
+            llm: dfLlmClient,
+          ),
         ),
       ]),
       StatefulShellBranch(routes: <RouteBase>[
@@ -113,7 +118,8 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             onRetryReport: () => context.go('/report'),
             recordSession: true,
             reportLoader: aggregateLatestReport,
-            wakeTime: lightWindowWakeLabel() ?? '06:42',
+            // 无进行中会话时用系统当前时刻，绝不显示写死的假时间
+            wakeTime: lightWindowWakeLabel() ?? _hhmOf(DateTime.now()),
           ),
         ),
       ),

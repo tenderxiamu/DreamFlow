@@ -41,8 +41,15 @@ Future<DfReportData?> aggregateLatestReport() async {
   final String deepLabel =
       '${deep ~/ 60}:${(deep % 60).toString().padLeft(2, '0')}';
 
+  // 标题日期必须跟着真实会话走：跨夜（睡够 3h 且上午结束）才叫「昨夜」，
+  // 白天临时试跑的一次会话就是「今天」，不能再无脑写「昨夜」。
+  final DateTime ended = s.endedAt ?? DateTime.now();
+  final bool overnight =
+      ended.hour < 12 && duration.inHours >= 3;
+  final String dayPrefix = overnight ? '昨夜' : '今天';
+
   return DfReportData(
-    dateLabel: '昨夜 · ${s.startedAt.month}月${s.startedAt.day}日',
+    dateLabel: '$dayPrefix · ${s.startedAt.month}月${s.startedAt.day}日',
     score: score,
     summary: summarizeScore(score),
     deepLabel: deepLabel,

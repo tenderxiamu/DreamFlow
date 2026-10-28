@@ -7,15 +7,16 @@ import 'package:dreamflow/data/df_llm.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
 import 'package:dreamflow/design_system/widgets/df_controls.dart';
+import 'package:dreamflow/design_system/widgets/df_focus.dart';
 import 'package:dreamflow/design_system/widgets/df_icons.dart';
 import 'package:dreamflow/design_system/widgets/df_screen.dart';
 import 'package:dreamflow/design_system/widgets/df_sheep.dart';
+import 'package:dreamflow/design_system/widgets/df_states.dart';
 import 'package:dreamflow/design_system/widgets/df_surfaces.dart';
-import 'package:dreamflow/screens/df_chat_screen.dart';
 
 /// 一条对话消息
 class DfMessage {
-  const DfMessage(this.text, {this.mine = false, this.emphasis});
+  const DfMessage(this.text, {this.mine = false, this.emphasis, this.at});
 
   final String text;
 
@@ -24,6 +25,9 @@ class DfMessage {
 
   /// 需要强调的片段（渲染为 `--mist-green`，如呼吸引导）
   final String? emphasis;
+
+  /// 消息时刻（历史回放用；引导开场为 null）
+  final DateTime? at;
 }
 
 /// 会话引擎的裁决结果：回复文本 + 可选强调片段 + 可选 chip 更新
@@ -39,28 +43,26 @@ class _EngineReply {
   final List<String>? chips;
 }
 
-/// §7 B 睡前情绪对话 —— **可交互版**。
+/// §7 B 睡前情绪对话 —— **引导式、按天分会话**。
 ///
-/// 与静态稿 [DfChatScreen] 的关系：视觉规格一致（同款气泡 / chip / 输入区 / 免责注脚），
-/// 只是把写死的三条示例气泡换成会话状态：
-/// - 输入并发送 → 我方气泡上屏 → [llm] 非空时流式调真实模型（M4），否则走规则引擎
-/// - 回复末尾的情绪标记解析为「此刻识别到的情绪」chip，并落 MoodRecords 表
-/// - 对话历史持久化到 ChatMessages 表，作为后续轮次的模型上下文
-/// - 交流两轮后给出「就去睡吧」出口（接入 §7 C 沉浸助眠）
-///
-/// 网络失败 / 无可用模型时回退到确定性规则引擎（不联网、不调用模型），
-/// 并在输入区给出错误提示；保证离线时核心陪伴体验可用。
+/// 与旧版（写死三条示例气泡）的区别：
+/// - **进入即有引导**：当天第一次打开时，由梦洄主动开场（按时段换语气），
+///   并给出 4 个可点的话题入口，用户不必先想「说什么」。
+/// - **每天一个会话**：消息按自然日归属；跨天自动新开，昨天的不串到今天。
+/// - **历史可回看**：右上「往期」→ 按天分组的对话列表 → 只读回放。
+/// - **时间取系统**：顶部时刻与每条消息时间都来自 `DateTime.now()`，不写死。
+/// - 视口底部保留 Tab 栏，随时可切到首页 / 助眠 / 我的。
 class DfChatSession extends StatefulWidget {
   const DfChatSession({
     super.key,
     this.seed = const <DfMessage>[],
     this.replyDelay = const Duration(milliseconds: 1200),
     this.onEnterSleep,
-    this.chatTime = '22:41',
+    this.onTab,
     this.llm,
   });
 
-  /// 开场消息（缺省为设计稿示例三条）
+  /// 开场消息（**测试注入口**；为空时走每日引导开场）
   final List<DfMessage> seed;
 
   /// 对方"正在输入"到回复落地的延时
@@ -68,7 +70,9 @@ class DfChatSession extends StatefulWidget {
 
   /// 进入 §7 C 沉浸助眠（交流两轮后出现「就去睡吧」出口）
   final VoidCallback? onEnterSleep;
-  final String chatTime;
+
+  /// Tab 切换（0 首页 / 1 对话 / 2 助眠 / 3 我的）
+  final ValueChanged<int>? onTab;
 
   /// 真实 LLM 客户端（M4）。null → 规则引擎虚拟回复（测试 / 离线兜底）。
   final DfLlmClient? llm;
@@ -80,54 +84,141 @@ class DfChatSession extends StatefulWidget {
       '每次回复末尾必须另起一行输出情绪识别结果，格式严格为：【情绪:标签·强度:低|中|高】，'
       '标签从 焦虑/疲惫/低落/烦躁/入睡困难/平静 中选最贴切的一个，无法判断时用【情绪:未知·强度:中】。';
 
-  /// 设计稿示例开场（§7 B）
-  static const List<DfMessage> opening = <DfMessage>[
-    DfMessage('看起来今天有些累呢，愿意和我说说，今天发生了什么让你放不下的事吗？'),
-    DfMessage('工作上有点急，脑子里停不下来。', mine: true),
-    DfMessage(
-      '我懂的。那我们先不解决问题——跟着我，吸气四拍，再用更长的六拍呼出去，重复三次。',
-      emphasis: '吸气四拍，再用更长的六拍呼出去，重复三次。',
-    ),
+  /// 引导话题：用户不想组织语言时，点一下就能开始
+  static const List<String> topics = <String>[
+    '今天有点累',
+    '心里有事放不下',
+    '就是睡不着',
+    '不想说话，陪我待着',
   ];
+
+  /// 按时段的引导开场（这就是「引导型对话」的第一句）
+  static String greetingFor(DateTime now) {
+    final int h = now.hour;
+    if (h >= 5 && h < 11) {
+      return '早上好。昨晚睡得还好吗？想说两句就说，不想说，我们也安静待一会儿。';
+    }
+    if (h >= 11 && h < 17) {
+      return '下午好。这会儿心里还有什么挂着的事吗？说出来会轻一点。';
+    }
+    if (h >= 17 && h < 23) {
+      return '晚上好。今天有什么放不下的，我们把它说完，再慢慢沉下去。';
+    }
+    return '还没睡着吗？不用强迫自己。跟我说说，现在脑子里在转的是什么。';
+  }
 
   @override
   State<DfChatSession> createState() => _DfChatSessionState();
 }
 
 class _DfChatSessionState extends State<DfChatSession> {
-  late final List<DfMessage> _messages;
+  final List<DfMessage> _messages = <DfMessage>[];
   final TextEditingController _input = TextEditingController();
   Timer? _replyTimer;
+  Timer? _clock;
   bool _awaitingReply = false;
-  List<String> _chips = const <String>['焦虑', '疲惫'];
+  bool _loading = true;
+
+  /// 引导话题条：仅当**今天还没说过话**时出现
+  bool _showTopics = false;
+
+  List<String> _chips = const <String>[];
   String? _errorText;
   StreamSubscription<String>? _replySub;
 
+  /// 会话归属日（跨天检测用）
+  late DateTime _sessionDay = _dayOf(DateTime.now());
+
   /// 本会话的对话关联 ID（应用自管；同一会话内复用）
-  late final String _conversationId =
-      'df-${DateTime.now().microsecondsSinceEpoch}';
+  String _conversationId = 'df-00000000';
 
   /// 本次会话中用户是否发过消息（种子历史不计）
   bool _sentOnce = false;
 
   /// 是否已完成一轮对话（**本次会话**发过 + 已收到回复）——出现「就去睡吧」出口的条件。
-  /// 只认本次动作：种子历史里虽有我方气泡，但用户还没开口就不该诱导离开。
   bool get _hadRound => _sentOnce && !_awaitingReply;
+
+  static DateTime _dayOf(DateTime t) => DateTime(t.year, t.month, t.day);
+
+  static String _hhmm(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  static String _dayKey(DateTime t) =>
+      'df-${t.year}${t.month.toString().padLeft(2, '0')}${t.day.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
     super.initState();
-    _messages = List<DfMessage>.of(
-      widget.seed.isEmpty ? DfChatSession.opening : widget.seed,
-    );
+    _conversationId = _dayKey(_sessionDay);
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) => _tickClock());
+    _bootstrap();
   }
 
   @override
   void dispose() {
     _replySub?.cancel();
     _replyTimer?.cancel();
+    _clock?.cancel();
     _input.dispose();
     super.dispose();
+  }
+
+  /// 首次进入：恢复今天的会话；今天还没有消息 → 用引导开场新开一段
+  Future<void> _bootstrap() async {
+    if (widget.seed.isNotEmpty) {
+      setState(() {
+        _messages.addAll(widget.seed);
+        _loading = false;
+        _showTopics = false;
+      });
+      return;
+    }
+
+    List<ChatMessage> rows = const <ChatMessage>[];
+    try {
+      rows = await DreamFlowDb.instance
+          .messagesOnDay(_sessionDay)
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // 本地库不可用时仍然给出引导开场，保证陪伴不中断
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _messages.clear();
+      if (rows.isEmpty) {
+        _messages.add(DfMessage(DfChatSession.greetingFor(DateTime.now())));
+        _showTopics = true;
+      } else {
+        for (final ChatMessage m in rows) {
+          _messages.add(DfMessage(m.body, mine: m.mine, at: m.createdAt));
+        }
+        final bool askedToday = rows.any((ChatMessage m) => m.mine);
+        _showTopics = !askedToday;
+        _sentOnce = askedToday;
+      }
+      _loading = false;
+    });
+  }
+
+  /// 每 30s 走一次：刷新顶部时刻；跨过零点则自动新开一天的会话
+  void _tickClock() {
+    if (!mounted) return;
+    final DateTime now = DateTime.now();
+    if (_dayOf(now) != _sessionDay) {
+      setState(() {
+        _sessionDay = _dayOf(now);
+        _conversationId = _dayKey(_sessionDay);
+        _messages.clear();
+        _chips = const <String>[];
+        _sentOnce = false;
+        _showTopics = true;
+        _loading = false;
+        _messages.add(DfMessage(DfChatSession.greetingFor(now)));
+      });
+      return;
+    }
+    setState(() {}); // 只为刷新 header 上的时刻
   }
 
   /// §12 缺口 3：空内容发起时走 field 错误态，而不是静默丢弃
@@ -140,7 +231,8 @@ class _DfChatSessionState extends State<DfChatSession> {
     setState(() {
       _errorText = null;
       _sentOnce = true;
-      _messages.add(DfMessage(text, mine: true));
+      _showTopics = false;
+      _messages.add(DfMessage(text, mine: true, at: DateTime.now()));
       _awaitingReply = true;
     });
     _input.clear();
@@ -160,10 +252,20 @@ class _DfChatSessionState extends State<DfChatSession> {
         if (!mounted) return;
         setState(() {
           _awaitingReply = false;
-          _messages.add(DfMessage(reply.text, emphasis: reply.emphasis));
+          _messages.add(DfMessage(
+            reply.text,
+            emphasis: reply.emphasis,
+            at: DateTime.now(),
+          ));
         });
       });
     }
+  }
+
+  /// 点引导话题 → 相当于用户说了这句
+  void _sendTopic(String topic) {
+    _input.text = topic;
+    _send();
   }
 
   // ── M4：真实模型链路 ──────────────────────────────────────────────────
@@ -173,15 +275,18 @@ class _DfChatSessionState extends State<DfChatSession> {
       RegExp(r'【情绪[:：]([^·|】]+)·\s*强度[:：](低|中|高)】');
 
   Future<void> _sendViaLlm(DfLlmClient llm, String userText) async {
-    // 历史持久化 + 上下文（本地库是上下文来源；失败不阻塞对话）
+    // 上下文只取**今天**的消息（跨天不串味），并把本轮用户输入并入
     List<DfLlmMessage> context = <DfLlmMessage>[
       const DfLlmMessage('system', DfChatSession.systemPrompt),
       DfLlmMessage('user', userText),
     ];
     try {
-      final List<ChatMessage> recent = await DreamFlowDb.instance
-          .recentMessages(limit: 12)
-          .timeout(const Duration(seconds: 2), onTimeout: () => <ChatMessage>[]);
+      final List<ChatMessage> today = await DreamFlowDb.instance
+          .messagesOnDay(_sessionDay)
+          .timeout(const Duration(seconds: 2));
+      final List<ChatMessage> recent = today.length > 12
+          ? today.sublist(today.length - 12)
+          : today;
       if (recent.isNotEmpty) {
         context = <DfLlmMessage>[
           const DfLlmMessage('system', DfChatSession.systemPrompt),
@@ -190,12 +295,14 @@ class _DfChatSessionState extends State<DfChatSession> {
           DfLlmMessage('user', userText),
         ];
       }
-      await DreamFlowDb.instance
-          .addChatMessage(mine: true, text: userText)
-          .timeout(const Duration(seconds: 2));
     } catch (_) {
       // 本地库不可用不阻断对话
     }
+    try {
+      await DreamFlowDb.instance
+          .addChatMessage(mine: true, text: userText)
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {/* 落库失败不阻断 */}
 
     // 占位气泡，流式追加
     final int bubbleIndex = _messages.length;
@@ -207,7 +314,8 @@ class _DfChatSessionState extends State<DfChatSession> {
           in llm.chat(messages: context, conversationId: _conversationId)) {
         acc.write(delta);
         if (mounted) {
-          setState(() => _messages[bubbleIndex] = DfMessage(acc.toString()));
+          setState(() =>
+              _messages[bubbleIndex] = DfMessage(acc.toString(), at: DateTime.now()));
         }
       }
       await _finishLlmReply(acc.toString(), bubbleIndex: bubbleIndex);
@@ -273,7 +381,8 @@ class _DfChatSessionState extends State<DfChatSession> {
       if (error != null) _errorText = error;
       // 占位气泡（无论真实回复还是兜底回复）都原位替换
       if (shown.isNotEmpty) {
-        _messages[bubbleIndex] = DfMessage(shown, emphasis: emphasis);
+        _messages[bubbleIndex] =
+            DfMessage(shown, emphasis: emphasis, at: DateTime.now());
       }
       if (chips != null) _chips = chips;
     });
@@ -289,13 +398,8 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   // ───────────────────────────────────────────────────────────────────────
   // 会话引擎（确定性规则，不联网、不调模型；接真实 NLP 时只需替换 [_engine]）
-  //
-  // 分诊顺序：**提问 → 情绪 → 兜底**。
-  // 用户在问问题（如「你叫什么名字」）时绝不能用情绪模板去答——那等于自说自话。
-  // 兜底也不是模板句，而是回声式共情：引用用户原话，把话题还给用户。
   // ───────────────────────────────────────────────────────────────────────
 
-  /// 引擎裁决结果：回复文本 + 可选的强调片段 + 可选的 chip 更新
   static final RegExp _questionPattern = RegExp(
     r'[?？]|你叫|名字|你是谁|你是|什么|怎么|为什么|能不能|可以吗|可以不|会不会|有没有|几点|多少|哪里|在哪|干嘛|干啥',
   );
@@ -337,7 +441,6 @@ class _DfChatSessionState extends State<DfChatSession> {
         '时间就按你手机走的来。今晚不用盯紧它——慢下来，才是这里唯一的日程。',
       );
     }
-    // 其余问题：承认边界，把话题接回用户身上（而不是硬答）
     return _EngineReply(
       '这个我先记下，不急着答——今晚我更擅长陪你把心放下。你刚说到「${_quote(text)}」，想多听一点。',
     );
@@ -367,7 +470,6 @@ class _DfChatSessionState extends State<DfChatSession> {
     return hit;
   }
 
-  /// 情绪回复（同一主情绪稳定同一句，便于测试断言）
   String _moodReply(String primary) {
     switch (primary) {
       case '焦虑':
@@ -385,14 +487,41 @@ class _DfChatSessionState extends State<DfChatSession> {
     }
   }
 
+  // ── 历史回看 ────────────────────────────────────────────────────────────
+
+  Future<void> _openHistory() async {
+    List<ChatMessage> rows = const <ChatMessage>[];
+    try {
+      rows = await DreamFlowDb.instance
+          .latestMessages(limit: 400)
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    if (!mounted) return;
+    final DfPalette p = DfPalette.of(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: p.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(DfRadius.card)),
+      ),
+      builder: (BuildContext ctx) => FractionallySizedBox(
+        heightFactor: 0.74,
+        child: _HistorySheet(rows: rows),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final DfPalette p = DfPalette.of(context);
+    final DateTime now = DateTime.now();
 
     return DfScreenScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // ── 会话头 ──────────────────────────────────────────────
           Row(
             children: <Widget>[
               const DfAvatar(diameter: 38, sheepHeight: 30),
@@ -401,10 +530,7 @@ class _DfChatSessionState extends State<DfChatSession> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      '梦洄',
-                      style: DfType.bodyS(context, p.text).copyWith(fontSize: 16),
-                    ),
+                    Text('梦洄', style: DfType.body(context, p.text)),
                     const SizedBox(height: 2),
                     Row(
                       children: <Widget>[
@@ -426,75 +552,138 @@ class _DfChatSessionState extends State<DfChatSession> {
                   ],
                 ),
               ),
-              Text(widget.chatTime, style: DfType.caption(context, p.text3)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: <Widget>[
+                  // 时刻取系统时间，每 30s 刷新
+                  Text(_hhmm(now), style: DfType.caption(context, p.text3)),
+                  const SizedBox(height: 2),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _openHistory,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 2),
+                      child: Text('往期 ›', style: DfType.caption(context, p.text3)),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 22),
-          for (int i = 0; i < _messages.length; i++) ...<Widget>[
-            _bubbleOf(_messages[i]),
-            const SizedBox(height: 12),
-          ],
-          const SizedBox(height: 4),
-          DfCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '此刻识别到的情绪',
-                  style: DfType.bodyS(context, p.text2),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+          const SizedBox(height: 20),
+
+          if (_loading)
+            Padding(
+              padding: const EdgeInsets.only(top: 40),
+              child: DfStateSwitch(
+                kind: DfStateKind.loading,
+                child: const SizedBox.shrink(),
+              ),
+            )
+          else ...<Widget>[
+            for (int i = 0; i < _messages.length; i++) ...<Widget>[
+              _bubbleOf(_messages[i]),
+              const SizedBox(height: 12),
+            ],
+
+            // 引导话题：今天还没开口时出现，点一下就发送
+            if (_showTopics && !_awaitingReply) ...<Widget>[
+              const SizedBox(height: 2),
+              Text('不想打太多字的话，从这儿挑一句：',
+                  style: DfType.caption(context, p.text3)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final String topic in DfChatSession.topics)
+                    _TopicChip(label: topic, onTap: () => _sendTopic(topic)),
+                ],
+              ),
+              const SizedBox(height: 4),
+            ],
+
+            // 情绪卡：识别到才出现（首次进入不占屏）
+            if (_chips.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 4),
+              DfCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    for (int i = 0; i < _chips.length; i++)
-                      DfChip(label: _chips[i], selected: i == 0),
+                    Text('此刻识别到的情绪',
+                        style: DfType.bodyS(context, p.text2)),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        for (int i = 0; i < _chips.length; i++)
+                          DfChip(label: _chips[i], selected: i == 0),
+                      ],
+                    ),
                   ],
+                ),
+              ),
+            ],
+
+            // 完成一轮对话后给出「去睡」出口：对话不是无限聊天，终点是入睡
+            if (_hadRound && widget.onEnterSleep != null) ...<Widget>[
+              const SizedBox(height: 14),
+              const _SleepExitHint(),
+              const SizedBox(height: 12),
+              DfCloudButton(
+                label: '就去睡吧',
+                height: DfTouch.secondaryH,
+                onPressed: widget.onEnterSleep,
+              ),
+            ],
+          ],
+        ],
+      ),
+      bottomFullBleed: true,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: DfSpace.padX),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: DfField(
+                    hint: '说点什么…',
+                    controller: _input,
+                    errorText: _errorText,
+                    onSubmitted: (_) => _send(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                DfIconButton(
+                  glyph: DfGlyph.mic,
+                  semanticLabel: '按住说话',
+                  onPressed: _send,
                 ),
               ],
             ),
           ),
-          // 完成一轮对话后给出「去睡」出口：对话不是无限聊天，终点是入睡
-          if (_hadRound && widget.onEnterSleep != null) ...<Widget>[
-            const SizedBox(height: 14),
-            const _SleepExitHint(),
-            const SizedBox(height: 12),
-            DfCloudButton(
-              label: '就去睡吧',
-              height: DfTouch.secondaryH,
-              onPressed: widget.onEnterSleep,
-            ),
-          ],
-        ],
-      ),
-      bottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: DfField(
-                  hint: '说点什么…',
-                  controller: _input,
-                  errorText: _errorText,
-                  onSubmitted: (_) => _send(),
-                ),
-              ),
-              const SizedBox(width: 10),
-              DfIconButton(
-                glyph: DfGlyph.mic,
-                semanticLabel: '按住说话',
-                onPressed: _send,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           // §11 该注脚必须保留
           Text(
             '内容仅用于情绪陪伴，不构成医疗建议',
             textAlign: TextAlign.center,
             style: DfType.caption(context, p.text3),
+          ),
+          const SizedBox(height: 2),
+          // Tab 栏：对话页也需要能切走，不能把用户困在这儿
+          DfTabs(
+            currentIndex: 1,
+            onTap: widget.onTab,
+            items: const <DfTabItem>[
+              DfTabItem(DfGlyph.home, '首页'),
+              DfTabItem(DfGlyph.chat, '对话'),
+              DfTabItem(DfGlyph.moon, '助眠'),
+              DfTabItem(DfGlyph.profile, '我的'),
+            ],
           ),
         ],
       ),
@@ -521,6 +710,212 @@ class _DfChatSessionState extends State<DfChatSession> {
       // `text` 为 required；走富文本分支时传空串，仅用 [rich]
       text: '',
       rich: TextSpan(children: spans),
+    );
+  }
+}
+
+/// 引导话题 chip（可点即发，弱化边框，让「挑一句」比「打字」更轻）
+class _TopicChip extends StatelessWidget {
+  const _TopicChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    return DfFocusRing(
+      radius: DfRadius.pill,
+      onActivate: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: p.mistBlue.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(DfRadius.pill),
+            border: Border.all(color: p.mistBlue.withValues(alpha: 0.28)),
+          ),
+          child: Text(label, style: DfType.chip(context, p.text2)),
+        ),
+      ),
+    );
+  }
+}
+
+/// 往期会话：按自然日分组 → 点某天只读回放
+class _HistorySheet extends StatefulWidget {
+  const _HistorySheet({required this.rows});
+
+  final List<ChatMessage> rows;
+
+  @override
+  State<_HistorySheet> createState() => _HistorySheetState();
+}
+
+class _HistorySheetState extends State<_HistorySheet> {
+  DateTime? _openDay;
+
+  static const List<String> _week = <String>['一', '二', '三', '四', '五', '六', '日'];
+
+  String _label(DateTime d) {
+    final DateTime today = DateTime.now();
+    final int diff = DateTime(today.year, today.month, today.day)
+        .difference(DateTime(d.year, d.month, d.day))
+        .inDays;
+    final String base = '${d.month}月${d.day}日 · 周${_week[d.weekday - 1]}';
+    if (diff == 0) return '今天 · $base';
+    if (diff == 1) return '昨天 · $base';
+    return base;
+  }
+
+  Map<DateTime, List<ChatMessage>> _grouped() {
+    final Map<DateTime, List<ChatMessage>> out = <DateTime, List<ChatMessage>>{};
+    for (final ChatMessage m in widget.rows) {
+      final DateTime d =
+          DateTime(m.createdAt.year, m.createdAt.month, m.createdAt.day);
+      out.putIfAbsent(d, () => <ChatMessage>[]).add(m);
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    final Map<DateTime, List<ChatMessage>> grouped = _grouped();
+    final List<DateTime> days = grouped.keys.toList()
+      ..sort((DateTime a, DateTime b) => b.compareTo(a));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+          child: Row(
+            children: <Widget>[
+              if (_openDay != null) ...<Widget>[
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _openDay = null),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 10),
+                    child: Text('‹ 返回', style: DfType.caption(context, p.text2)),
+                  ),
+                ),
+              ],
+              Expanded(
+                child: Text(
+                  _openDay == null ? '往期对话' : _label(_openDay!),
+                  style: DfType.titleS(context, p.text),
+                ),
+              ),
+              Text(
+                _openDay == null
+                    ? '${days.length} 天'
+                    : '${grouped[_openDay!]?.length ?? 0} 条',
+                style: DfType.caption(context, p.text3),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(height: 1, color: p.line),
+        ),
+        Expanded(
+          child: _openDay == null
+              ? _dayList(p, grouped, days)
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  itemCount: grouped[_openDay!]!.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (BuildContext c, int i) {
+                    final ChatMessage m = grouped[_openDay!]![i];
+                    return Column(
+                      crossAxisAlignment: m.mine
+                          ? CrossAxisAlignment.end
+                          : CrossAxisAlignment.start,
+                      children: <Widget>[
+                        DfBubble(text: m.body, mine: m.mine),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${m.createdAt.hour.toString().padLeft(2, '0')}:'
+                          '${m.createdAt.minute.toString().padLeft(2, '0')}',
+                          style: DfType.caption(context, p.text3),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _dayList(
+    DfPalette p,
+    Map<DateTime, List<ChatMessage>> grouped,
+    List<DateTime> days,
+  ) {
+    if (days.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '还没有往期对话。今晚聊过之后，这里会留下痕迹。',
+            textAlign: TextAlign.center,
+            style: DfType.bodyS(context, p.text2),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      itemCount: days.length,
+      separatorBuilder: (_, __) => Container(height: 1, color: p.line),
+      itemBuilder: (BuildContext c, int i) {
+        final DateTime d = days[i];
+        final List<ChatMessage> rows = grouped[d]!;
+        final ChatMessage? firstMine = rows.cast<ChatMessage?>().firstWhere(
+              (ChatMessage? m) => m!.mine,
+              orElse: () => null,
+            );
+        final String excerpt = (firstMine?.body ?? rows.first.body)
+            .replaceAll(RegExp(r'\s+'), ' ');
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _openDay = d),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(_label(d), style: DfType.bodyS(context, p.text)),
+                      const SizedBox(height: 5),
+                      Text(
+                        excerpt.length <= 22
+                            ? excerpt
+                            : '${excerpt.substring(0, 22)}…',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: DfType.caption(context, p.text3),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text('${rows.length} 条', style: DfType.caption(context, p.text3)),
+                const SizedBox(width: 6),
+                Text('›', style: DfType.caption(context, p.text3)),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

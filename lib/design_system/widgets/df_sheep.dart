@@ -194,6 +194,7 @@ class _SheepPainter extends CustomPainter {
           fontSize: fontSize,
           fontFamily: 'MaShanZheng',
           fontFamilyFallback: const <String>['LXGWWenKai', 'STKaiti', 'serif'],
+          decoration: TextDecoration.none,
         ),
       ),
       textDirection: TextDirection.ltr,

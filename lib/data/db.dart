@@ -107,4 +107,30 @@ class DreamFlowDb extends _$DreamFlowDb {
     final List<ChatMessage> rows = await q.get();
     return rows.reversed.toList();
   }
+
+  // ---- 按自然日分会话（B 屏：每天一个会话，跨天自动新开） ----
+
+  /// 某一天 [day] 的全部消息（升序）。
+  ///
+  /// 只按本地时区取 [day] 的 00:00 至次日 00:00，不做 schema 迁移 ——
+  /// `createdAt` 已经能表达日期归属。
+  Future<List<ChatMessage>> messagesOnDay(DateTime day) {
+    final DateTime start = DateTime(day.year, day.month, day.day);
+    final DateTime end = start.add(const Duration(days: 1));
+    final Selectable<ChatMessage> q = select(chatMessages)
+      ..where(($ChatMessagesTable tbl) =>
+          tbl.createdAt.isBiggerOrEqualValue(start) &
+          tbl.createdAt.isSmallerThanValue(end))
+      ..orderBy([($ChatMessagesTable tbl) => OrderingTerm.asc(tbl.createdAt)]);
+    return q.get();
+  }
+
+  /// 最近 [limit] 条消息（升序），用于在 Dart 侧按天聚合出「历史会话」列表。
+  Future<List<ChatMessage>> latestMessages({int limit = 400}) async {
+    final Selectable<ChatMessage> q = select(chatMessages)
+      ..orderBy([($ChatMessagesTable tbl) => OrderingTerm.desc(tbl.createdAt)])
+      ..limit(limit);
+    final List<ChatMessage> rows = await q.get();
+    return rows.reversed.toList();
+  }
 }

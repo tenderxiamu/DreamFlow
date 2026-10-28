@@ -240,26 +240,31 @@ class DfSpace {
   static const double contentTop = 14;
 }
 
-/// §4.2 字号梯度（8 档，0.5px 已归一）
+/// §4.2 字号梯度（7 档，等差收敛 —— 避免「同类文字忽大忽小」）
+///
+/// 11 → 12 → 14 → 16 → 20 → 26 → 34
+/// 每档只对应一个语义角色，页面不得再 `copyWith(fontSize:)` 破格。
 class DfFontSize {
   const DfFontSize._();
   static const double caption = 11; // 注脚 / Tab / 单位
   static const double small = 12; // 辅助说明 / 徽标
-  static const double bodyS = 13; // 正文（气泡 / 说明）
-  static const double body = 14; // 次级按钮字
-  static const double input = 16; // 输入框（硬性，防 iOS 聚焦缩放）/ 主按钮字
-  static const double titleS = 19; // 卡片 / 模块标题
-  static const double title = 25; // 页面主标题
-  static const double display = 34; // 场景大数字 / 环形睡眠分
+  static const double bodyS = 14; // 正文（气泡 / 说明 / 洞察）
+  static const double body = 16; // 强调行 / 昵称 / 次级按钮
+  static const double input = 16; // 输入框（硬性，防 iOS 聚焦缩放）/ 主按钮
+  static const double titleS = 20; // 卡片 / 模块标题
+  static const double title = 26; // 页面主标题
+  static const double display = 34; // 场景大数字 / 大时刻 / 环形睡眠分
 }
 
-/// §4.2 行高
+/// §4.2 行高（三档：紧 / 正文 / 宽松，不再逐组件微调）
 class DfLineHeight {
   const DfLineHeight._();
-  static const double title = 1.35;
-  static const double body = 1.6;
-  static const double bubble = 1.62;
-  static const double insight = 1.7;
+  static const double tight = 1.2; // 数字 / 徽标 / 按钮
+  static const double title = 1.3; // 标题组
+  static const double caption = 1.4; // 注脚
+  static const double body = 1.6; // 正文
+  static const double bubble = 1.6; // 气泡（与正文同档）
+  static const double insight = 1.65; // 洞察卡
 }
 
 /// §4.4 圆角（仅 2 种 + 指标格 14 嵌套件）
