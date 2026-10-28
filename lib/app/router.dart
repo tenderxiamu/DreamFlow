@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../data/df_llm.dart';
 import '../data/light_sleep.dart';
 import '../data/report_aggregator.dart';
+import '../data/sleep_schedule.dart';
 import '../data/sleep_session_recorder.dart';
 import '../design_system/df_theme.dart';
 import '../design_system/widgets/df_states.dart';
@@ -24,7 +25,8 @@ final DfLlmClient dfLlmClient = DfLlmClient();
 
 /// §7 屏幕流转（落地区）：
 /// - Tab 四分支（IndexedStack 保状态）：A 首页 / B 对话 / C 助眠 / D 我的
-/// - B「就去睡吧」→ /sleep；C 播完 onFinished → /wakeup
+/// - B「就去睡吧」→ /sleep
+/// - **唤醒只由起床闹钟触发**（M6.8：音景播完只停播，不再跳 /wakeup）
 /// - 二级页 E 唤醒 / D 报告 / 状态页：root navigator push，统一 t-paper
 ///   主题归属（§5：B/C=夜墨，E/D=宣纸），由 [_paperPage] 包裹。
 /// Tab 切换由屏幕自身 onTab(int) 回调驱动 goBranch。
@@ -83,10 +85,10 @@ StatefulShellRoute buildShellRoute() {
       StatefulShellBranch(routes: <RouteBase>[
         GoRoute(
           path: '/sleep',
-          builder: (BuildContext context, GoRouterState state) =>
-              DfSleepFlow(
-                  onFinished: () => context.go('/wakeup'),
-                  recordSession: true),
+          builder: (BuildContext context, GoRouterState state) => DfSleepFlow(
+            recordSession: true,
+            onTab: (int i) => StatefulNavigationShell.of(context).goBranch(i),
+          ),
         ),
       ]),
       StatefulShellBranch(routes: <RouteBase>[
@@ -118,8 +120,10 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             onRetryReport: () => context.go('/report'),
             recordSession: true,
             reportLoader: aggregateLatestReport,
-            // 无进行中会话时用系统当前时刻，绝不显示写死的假时间
-            wakeTime: lightWindowWakeLabel() ?? _hhmOf(DateTime.now()),
+            // M6.8：唤醒时刻取用户设定的起床闹钟（未设则用系统当前时刻）
+            wakeTime: SleepSchedule.instance.alarmEnabled
+                ? SleepSchedule.instance.alarmLabel
+                : _hhmOf(DateTime.now()),
           ),
         ),
       ),

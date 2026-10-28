@@ -2,26 +2,35 @@ import 'package:flutter/material.dart';
 
 import 'df_tokens.dart';
 
-/// §4.3 字体族 + §4.2 字号 / 行高。
+/// §4.3 字体族。
 ///
-/// 三套字体均可商用（OFL）：Ma Shan Zheng / LXGW WenKai / Cormorant Garamond。
-/// 未随包分发字体文件时自动回退到系统衬线族，见 [fontFamilyFallback]。
+/// **M6.8 起正文不再使用打包的楷体**。原因：字体子集只覆盖 318 个汉字，而 lib/
+/// 实际用到 983 个，缺的 680 个（「想 / 能 / 很 / 大 / 太 / 真 / 会 / 做」……）
+/// 会被 Flutter 逐字回退到系统字体 —— 同一段话里一半楷体一半黑体，字面高度与字重
+/// 都不同，看起来就是「字号忽大忽小」。LLM 动态回复更是几乎全量缺字。
+///
+/// 现在分三族，各司其职：
+/// - [body]：**系统字体**（不指定 family，交给平台 CJK 字体），
+///   覆盖 100%，动态内容一个生僻字都不会掉；正文 / 气泡 / 输入 / 说明全用它
+/// - [brush]：毛笔体（MaShanZheng 子集 3911 字符，源码汉字零缺失），仅用于标题与大数字
+/// - [num]：Cormorant Garamond，仅用于纯阿拉伯数字（ASCII 完整）
 class DfFonts {
   const DfFonts._();
 
+  /// 正文族：null = 平台默认字体（Android: MiSans/Noto Sans CJK；iOS: PingFang SC）
+  static const String? body = null;
+
   static const String brush = 'MaShanZheng';
-  static const String body = 'LXGWWenKai';
   static const String num = 'CormorantGaramond';
 
+  /// 毛笔字兜底：万一系统缺 MaShanZheng 注册（如某些定制 ROM），
+  /// 退到系统楷体，仍是同族观感，不会跳成黑体。
   static const List<String> fallbackBrush = <String>[
-    'LXGWWenKai', 'STKaiti', 'KaiTi', 'Noto Serif SC', 'serif',
+    'Kaiti SC', 'STKaiti', 'KaiTi', 'serif',
   ];
-  static const List<String> fallbackBody = <String>[
-    'Songti SC', 'STSong', 'Noto Serif SC', 'serif',
-  ];
-  static const List<String> fallbackNum = <String>[
-    'LXGWWenKai', 'serif',
-  ];
+
+  /// 数字兜底：衬线拉丁，保持等宽观感即可
+  static const List<String> fallbackNum = <String>['serif'];
 }
 
 /// 排版工厂：所有文本样式集中产出，页面不写裸 TextStyle。
@@ -65,8 +74,8 @@ class DfType {
       color: color,
       fontWeight: weight,
       letterSpacing: letterSpacingEm * size,
-      fontFamily: family ?? DfFonts.body,
-      fontFamilyFallback: fallback ?? DfFonts.fallbackBody,
+      fontFamily: family,
+      fontFamilyFallback: fallback,
       fontFeatures: features,
       decoration: TextDecoration.none,
     );

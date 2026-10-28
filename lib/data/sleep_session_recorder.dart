@@ -4,15 +4,16 @@ import 'package:drift/drift.dart' show Value;
 
 import 'db.dart';
 import 'light_sleep.dart';
+import 'sleep_schedule.dart';
 import 'wake_alarm.dart';
 
-/// M5：睡眠会话记录器 —— C 助眠流程开始 → E 唤醒「我醒了」之间的会话闭环。
+/// M5 / M6.8：睡眠会话记录器 —— C 助眠流程开始 → E 唤醒「我醒了」之间的会话闭环。
 ///
-/// - [begin] 在进入 C 屏（recordSession 开启时）调用，记入睡时刻并预约唤醒通知
+/// - [begin] 在进入 C 屏时调用，记入睡时刻，并**重排用户设定的起床闹钟**
 /// - [complete] 在 E 屏点「我醒了」时调用，落库 SleepSessions 并返回会话行
 ///
-/// 单例直接持有 [DreamFlowDb.instance]；所有 DB 操作包 try/catch ——
-/// 落库失败只影响报告，不阻断助眠主链路（离线优先）。
+/// M6.8 改动：入睡时不再自动预约「入睡 + 7.5 小时」的固定唤醒。唤醒时刻唯一
+/// 来源是 [SleepSchedule] 里用户设定的闹钟（可吸附浅睡窗口），音景播完不会唤醒。
 class SleepSessionRecorder {
   SleepSessionRecorder._();
 
@@ -29,15 +30,10 @@ class SleepSessionRecorder {
 
   /// 开始会话。重复调用以最早一次为准（B 屏 → C 屏多次导航不重置）。
   ///
-  /// 同时预约唤醒通知：入睡 + 5 个周期（7.5h）对齐浅睡窗口。
+  /// 同时按用户设定的起床时刻重排闹钟（智能唤醒开启时会吸附到周期边界）。
   void begin() {
     _startedAt ??= DateTime.now();
-    final DateTime? start = _startedAt;
-    if (start != null) {
-      // 平台精确通知 + 应用内 Timer 双保险
-      unawaited(WakeAlarm.scheduleAt(lightWindowAfter(start)));
-      scheduleInAppAlarm(lightWindowAfter(start), () {});
-    }
+    unawaited(SleepSchedule.instance.rescheduleAlarm());
   }
 
   /// 结束会话并落库。返回写入的会话行；失败/未开始返回 null。

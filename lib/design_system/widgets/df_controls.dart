@@ -449,10 +449,13 @@ class DfBackButton extends StatelessWidget {
 // §6.7 情绪徽标 chip
 // ─────────────────────────────────────────────────────────────────────────────
 class DfChip extends StatelessWidget {
-  const DfChip({super.key, required this.label, this.selected = false});
+  const DfChip({super.key, required this.label, this.selected = false, this.onTap});
 
   final String label;
   final bool selected;
+
+  /// 可点选中（M6.8：定时关闭档位选择用）
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -460,14 +463,26 @@ class DfChip extends StatelessWidget {
     final Color c = selected ? p.mistGreen : p.mistBlue;
     final double borderAlpha = selected ? 0.4 : 0.28;
 
-    return Container(
+    final Widget chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: c.withValues(alpha: 0.06),
+        color: c.withValues(alpha: selected ? 0.14 : 0.06),
         borderRadius: BorderRadius.circular(DfRadius.pill),
         border: Border.all(color: c.withValues(alpha: borderAlpha)),
       ),
       child: Text(label, style: DfType.chip(context, c)),
+    );
+
+    if (onTap == null) return chip;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: chip,
+      ),
     );
   }
 }
@@ -510,8 +525,6 @@ class DfField extends StatelessWidget {
       style: TextStyle(
         fontSize: DfFontSize.input,
         color: p.text,
-        fontFamily: DfFonts.body,
-        fontFamilyFallback: DfFonts.fallbackBody,
         // 显式清装饰：根级 DefaultTextStyle 带着 Flutter 的 _errorTextStyle 黄双下划线
         decoration: TextDecoration.none,
       ),
@@ -524,8 +537,6 @@ class DfField extends StatelessWidget {
           // 按 §6.8 组件规格保留 `--text-3`（占位符 16px）；
           // 注意其与 §3 注「禁止 text-3 上卡片面」冲突（夜墨 4.06:1），已上报设计侧
           color: p.text3,
-          fontFamily: DfFonts.body,
-          fontFamilyFallback: DfFonts.fallbackBody,
           decoration: TextDecoration.none,
         ),
         filled: true,

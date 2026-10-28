@@ -146,15 +146,13 @@ class DfGalleryBoard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '助眠播完 → 渐进式唤醒（我醒了 → 报告 loading → 正文 / 再睡 5 分钟 → 倒计时 → 再唤醒）',
+                '助眠 → 起床闹钟到点 → 渐进式唤醒（我醒了 → 报告 loading → 正文 / 再睡 5 分钟 → 倒计时 → 再唤醒）',
                 style: DfType.caption(context, _boardDim),
               ),
               const SizedBox(height: 12),
               DfPhoneFrame(
                 time: '23:07',
                 child: DfNightFlow(
-                  tickInterval: const Duration(milliseconds: 220),
-                  step: 0.02,
                   snoozeDuration: const Duration(seconds: 6),
                   loadDuration: const Duration(milliseconds: 900),
                 ),

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../df_tokens.dart';
+import '../df_type.dart';
 
 /// §6.14 水墨小羊（吉祥物，全局贯穿）
 ///
@@ -193,7 +194,7 @@ class _SheepPainter extends CustomPainter {
           color: color,
           fontSize: fontSize,
           fontFamily: 'MaShanZheng',
-          fontFamilyFallback: const <String>['LXGWWenKai', 'STKaiti', 'serif'],
+          fontFamilyFallback: DfFonts.fallbackBrush,
           decoration: TextDecoration.none,
         ),
       ),

@@ -586,7 +586,7 @@ class _DfChatSessionState extends State<DfChatSession> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('梦洄', style: DfType.body(context, p.text)),
+                    Text('梦洄', style: DfType.titleS(context, p.text)),
                     const SizedBox(height: 2),
                     Row(
                       children: <Widget>[
@@ -653,7 +653,7 @@ class _DfChatSessionState extends State<DfChatSession> {
             if (_showTopics && !_awaitingReply) ...<Widget>[
               const SizedBox(height: 2),
               Text('不想打太多字的话，从这儿挑一句：',
-                  style: DfType.caption(context, p.text3)),
+                  style: DfType.sub(context, p.text3)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,

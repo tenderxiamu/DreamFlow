@@ -51,3 +51,6 @@ ios/build/
 key.properties
 *.jks
 *.keystore
+
+# 全量源字体（约 30 MiB，仅子集化时用）：tool/font_subset.py 从这读
+tool/fonts_src/

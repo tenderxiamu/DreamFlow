@@ -37,13 +37,12 @@ flutter:
     - assets/fonts/
 
   # §4.3 字体（OFL，已子集化：tool/font_subset.py）
+  # 正文不打包字体：走系统 CJK 字体，保证 LLM 动态文本零缺字（M6.8）
+  # 仅标题用毛笔体（子集覆盖 lib/ 全部 983 个汉字 + GB2312 一级），数字用 Cormorant
   fonts:
     - family: MaShanZheng
       fonts:
         - asset: assets/fonts/MaShanZheng-Regular.ttf
-    - family: LXGWWenKai
-      fonts:
-        - asset: assets/fonts/LXGWWenKai-Regular.ttf
     - family: CormorantGaramond
       fonts:
         - asset: assets/fonts/CormorantGaramond.ttf

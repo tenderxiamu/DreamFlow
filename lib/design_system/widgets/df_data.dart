@@ -331,3 +331,128 @@ class DfBrow extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §6.11b 可拖动进度条（M6.8 新增）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 可拖动的音景进度条。
+///
+/// [DfTimeline] 是纯展示件（营销屏 / 报告用），本组件专供播放页：
+/// - 点击任意位置直接跳转
+/// - 横向拖动实时预览（[onPreview] 推当前比例，松手才 [onSeek]）
+/// - 触摸区高 32（视觉轨道仍 2px），符合 §9 最小触摸目标
+class DfSeekBar extends StatefulWidget {
+  const DfSeekBar({
+    super.key,
+    required this.progress,
+    this.onSeek,
+    this.onPreview,
+    this.color,
+    this.trackColor,
+  });
+
+  /// 0–1 播放进度（外部真实值）
+  final double progress;
+
+  /// 松手提交
+  final ValueChanged<double>? onSeek;
+
+  /// 拖动中推预览比例；拖动结束推 null
+  final ValueChanged<double?>? onPreview;
+
+  final Color? color;
+  final Color? trackColor;
+
+  @override
+  State<DfSeekBar> createState() => _DfSeekBarState();
+}
+
+class _DfSeekBarState extends State<DfSeekBar> {
+  double? _drag;
+
+  double get _value => (_drag ?? widget.progress).clamp(0.0, 1.0);
+
+  void _set(double x, double w) {
+    if (w <= 0) return;
+    final double f = (x / w).clamp(0.0, 1.0);
+    setState(() => _drag = f);
+    widget.onPreview?.call(f);
+  }
+
+  void _commit() {
+    final double f = _value;
+    setState(() => _drag = null);
+    widget.onPreview?.call(null);
+    widget.onSeek?.call(f);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    final Color on = widget.color ?? p.mistBlue;
+    final Color off = widget.trackColor ?? p.track;
+    const double handle = 13;
+    const double hit = 34;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final double w = c.maxWidth;
+        final double x = (w * _value).clamp(handle / 2, w - handle / 2);
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (TapDownDetails d) => _set(d.localPosition.dx, w),
+          onTapUp: (TapUpDetails _) => _commit(),
+          onTapCancel: () => setState(() => _drag = null),
+          onHorizontalDragStart: (DragStartDetails d) => _set(d.localPosition.dx, w),
+          onHorizontalDragUpdate: (DragUpdateDetails d) => _set(d.localPosition.dx, w),
+          onHorizontalDragEnd: (DragEndDetails _) => _commit(),
+          onHorizontalDragCancel: () => setState(() => _drag = null),
+          child: Semantics(
+            slider: true,
+            value: '${(_value * 100).round()}%',
+            child: SizedBox(
+              height: hit,
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: <Widget>[
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: _drag != null ? 4 : 2,
+                      color: off,
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    width: x,
+                    child: Container(
+                      height: _drag != null ? 4 : 2,
+                      color: on,
+                    ),
+                  ),
+                  Positioned(
+                    left: x - handle / 2,
+                    child: AnimatedContainer(
+                      duration: DfMotion.dur,
+                      width: _drag != null ? handle + 5 : handle,
+                      height: _drag != null ? handle + 5 : handle,
+                      decoration: BoxDecoration(
+                        color: on,
+                        shape: BoxShape.circle,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(color: p.cardTint, spreadRadius: 4),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
