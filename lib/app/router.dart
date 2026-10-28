@@ -8,6 +8,7 @@ import '../data/report_aggregator.dart';
 import '../data/sleep_session_recorder.dart';
 import '../design_system/df_theme.dart';
 import '../design_system/widgets/df_states.dart';
+import '../screens/df_about_screen.dart';
 import '../screens/df_chat_session.dart';
 import '../screens/df_home_screen.dart';
 import '../screens/df_report_screen.dart';
@@ -22,7 +23,7 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 final DfLlmClient dfLlmClient = DfLlmClient();
 
 /// §7 屏幕流转（落地区）：
-/// - Tab 三分支（IndexedStack 保状态）：A 首页 / B 对话 / C 助眠
+/// - Tab 四分支（IndexedStack 保状态）：A 首页 / B 对话 / C 助眠 / D 我的
 /// - B「就去睡吧」→ /sleep；C 播完 onFinished → /wakeup
 /// - 二级页 E 唤醒 / D 报告 / 状态页：root navigator push，统一 t-paper
 ///   主题归属（§5：B/C=夜墨，E/D=宣纸），由 [_paperPage] 包裹。
@@ -81,6 +82,16 @@ StatefulShellRoute buildShellRoute() {
               DfSleepFlow(
                   onFinished: () => context.go('/wakeup'),
                   recordSession: true),
+        ),
+      ]),
+      StatefulShellBranch(routes: <RouteBase>[
+        GoRoute(
+          path: '/about',
+          builder: (BuildContext context, GoRouterState state) {
+            return DfAboutScreen(
+              onTab: (int i) => StatefulNavigationShell.of(context).goBranch(i),
+            );
+          },
         ),
       ]),
     ],
