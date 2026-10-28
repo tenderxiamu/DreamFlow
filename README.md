@@ -38,6 +38,12 @@
   图形占 108dp 画布 59%，确保圆形遮罩下不被切）
 - 启动屏：夜墨 `#14161A`（与首屏睡前模式无缝衔接），见 `res/drawable*/launch_background.xml`
 
+## 签名
+
+- 正式签名：`android/key.jks` + `android/key.properties`（两者不入版本库），
+  keystore 备份在仓库外 `keystore-backup/`。换机器时把两者放回原位即可重签。
+- `build.gradle.kts`：有 `key.properties` 走正式签名，没有则回退 debug 签名。
+
 ## 构建（国内网络环境）
 
 ```bash

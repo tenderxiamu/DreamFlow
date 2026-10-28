@@ -46,3 +46,8 @@ app.*.map.json
 android/build/
 android/app/build/
 ios/build/
+
+# 签名密钥与密码（M6.1）：绝不入版本库，keystore 备份在仓库外 keystore-backup/
+key.properties
+*.jks
+*.keystore
