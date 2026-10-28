@@ -15,7 +15,12 @@ import 'package:just_audio/just_audio.dart';
 ///
 /// 状态用 [ValueNotifier] 暴露，UI 直接 listen，避免 Stream 生命周期管理。
 class DfTrack {
-  const DfTrack({required this.asset, required this.title, required this.artist});
+  const DfTrack({
+    required this.asset,
+    required this.title,
+    required this.artist,
+    this.video,
+  });
 
   /// asset 路径，如 assets/audio/tide_low.mp3
   final String asset;
@@ -23,14 +28,38 @@ class DfTrack {
   /// C 屏标题（与 DfSleepFlow.soundscapes 对齐）
   final String title;
   final String artist;
+
+  /// 对应的动态场景视频（M6.9）；为 null 时播放页回退静态墨山
+  final String? video;
 }
 
 /// 音景库：顺序与 DfSleepFlow.soundscapes 一一对应。
+///
+/// [DfTrack.video] 是画面和声音的对应关系：
+/// 深海洄游 → 月光下的浪，远山松风 → 林间风动，
+/// 檐下雨声 → 落雨，空谷白噪 → 流动的山雾。
 const List<DfTrack> dfTracks = <DfTrack>[
-  DfTrack(asset: 'assets/audio/tide_low.mp3', title: '深海洄游', artist: 'DreamFlow 音景'),
-  DfTrack(asset: 'assets/audio/forest.mp3', title: '远山松风', artist: 'DreamFlow 音景'),
-  DfTrack(asset: 'assets/audio/rain_far.mp3', title: '檐下雨声', artist: 'DreamFlow 音景'),
-  DfTrack(asset: 'assets/audio/white_noise.mp3', title: '空谷白噪', artist: 'DreamFlow 音景'),
+  DfTrack(
+    asset: 'assets/audio/tide_low.mp3',
+    title: '深海洄游',
+    artist: 'DreamFlow 音景',
+    video: 'assets/scene/ocean_tide.mp4',
+  ),
+  DfTrack(
+    asset: 'assets/audio/forest.mp3',
+    title: '远山松风',
+    artist: 'DreamFlow 音景',
+  ),
+  DfTrack(
+    asset: 'assets/audio/rain_far.mp3',
+    title: '檐下雨声',
+    artist: 'DreamFlow 音景',
+  ),
+  DfTrack(
+    asset: 'assets/audio/white_noise.mp3',
+    title: '空谷白噪',
+    artist: 'DreamFlow 音景',
+  ),
 ];
 
 /// 播放器对外快照

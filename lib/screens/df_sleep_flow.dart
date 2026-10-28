@@ -14,6 +14,7 @@ import 'package:dreamflow/design_system/widgets/df_icons.dart';
 import 'package:dreamflow/design_system/widgets/df_scene.dart';
 import 'package:dreamflow/design_system/widgets/df_screen.dart';
 import 'package:dreamflow/design_system/widgets/df_surfaces.dart';
+import 'package:dreamflow/design_system/widgets/df_video_scene.dart';
 
 /// §7 C 沉浸助眠 —— 真实音景播放页。
 ///
@@ -182,53 +183,44 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
     final Duration shown = _preview == null
         ? pb.position
         : Duration(milliseconds: (total.inMilliseconds * _preview!).round());
-    final String title = DfSleepFlow.soundscapes[
-        pb.index.clamp(0, DfSleepFlow.soundscapes.length - 1)];
+    final int trackIndex = pb.index.clamp(0, dfTracks.length - 1);
+    final String title = dfTracks[trackIndex].title;
+    final String? sceneVideo = dfTracks[trackIndex].video;
 
     return DfScreenScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          // M6.9：去掉「千人千面 · 依你的情绪生成」这行副标题 ——
+          // 曲名本身已经把场景说清楚了，再加一句解释只是噪音
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(title, style: DfType.titleS(context, p.text)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '千人千面 · 依你的情绪生成',
-                      style: DfType.sub(context, p.text2),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: Text(title, style: DfType.titleS(context, p.text))),
               Text(_hhmm(DateTime.now()), style: DfType.caption(context, p.text3)),
             ],
           ),
           const SizedBox(height: 14),
-          const DfScene(height: 176),
+          // M6.9：有对应视频就用动态场景（浪 / 松风 / 雨 / 雾），
+          // 没有则退回原来的静态墨山，绝不空着
+          if (sceneVideo == null)
+            const DfScene(height: 176)
+          else
+            DfVideoScene(
+              asset: sceneVideo,
+              height: 176,
+              playing: pb.playing,
+              fallback: const DfScene(height: 176),
+            ),
           const SizedBox(height: 14),
           DfCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '音景层次 · 低频潮汐 × 远海雨声',
-                  style: DfType.bodyS(context, p.text2),
-                ),
-                const SizedBox(height: 12),
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: pb.playing ? 1.0 : 0.4),
-                  duration: DfMotion.dur,
-                  builder: (BuildContext context, double v, Widget? child) =>
-                      Opacity(opacity: v, child: child),
-                  child: const DfWave(),
-                ),
-              ],
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: pb.playing ? 1.0 : 0.4),
+              duration: DfMotion.dur,
+              builder: (BuildContext context, double v, Widget? child) =>
+                  Opacity(opacity: v, child: child),
+              child: const DfWave(),
             ),
           ),
           const SizedBox(height: 12),
@@ -311,10 +303,9 @@ class _DfSleepFlowState extends State<DfSleepFlow> {
             ],
           ),
           const SizedBox(height: 10),
+          // M6.9：只留未播放时的一句引导；一旦在放，就不再解释「后台继续播放」
           Text(
-            pb.playing
-                ? '音景在后台继续播放 · 可随时切到别的页面'
-                : '轻点播放，让这一夜慢慢沉下去',
+            pb.playing ? '' : '轻点播放，让这一夜慢慢沉下去',
             textAlign: TextAlign.center,
             style: DfType.caption(context, p.text3),
           ),
@@ -411,8 +402,6 @@ class _AlarmCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DfPalette p = DfPalette.of(context);
-    final SleepSchedule s = SleepSchedule.instance;
-    final DateTime at = s.nextAlarmAt();
 
     return DfCard(
       child: Column(
@@ -425,13 +414,13 @@ class _AlarmCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text('起床闹钟', style: DfType.bodyS(context, p.text)),
-                  const SizedBox(height: 6),
+                  Text('起床闹钟', style: DfType.sub(context, p.text2)),
+                  const SizedBox(height: 4),
+                  // M6.9：原来这里叠了两遍时间（`07:00 · 明天或今天 07:00`），
+                  // 只留一个，并且放大成卡片里的第二层级
                   Text(
-                    enabled
-                        ? '$label · 明天或今天 ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}'
-                        : '已关闭，这一夜不会被叫醒',
-                    style: DfType.caption(
+                    enabled ? label : '已关闭',
+                    style: DfType.titleS(
                       context,
                       enabled ? p.mistGreen : p.text3,
                     ),
@@ -462,10 +451,10 @@ class _AlarmCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          // M6.9：说明改成人话 —— 去掉「浅睡窗口 / 前后 20 分钟」这类技术描述，
+          // 用户只关心「醒来会不会难受」
           Text(
-            smartWake
-                ? '智能唤醒：在你设定的时刻前后 20 分钟内的浅睡窗口叫醒，比睡到自然醒更轻'
-                : '按设定时刻准时叫醒',
+            smartWake ? '在你睡得最浅时叫醒，醒来更轻松' : '到点准时叫醒',
             style: DfType.caption(context, p.text3),
           ),
         ],

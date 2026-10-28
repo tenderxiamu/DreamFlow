@@ -22,6 +22,7 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.6
   url_launcher: ^6.2.0
+  video_player: ^2.14.1
 
 dev_dependencies:
   build_runner: ^2.15.1
@@ -35,6 +36,8 @@ flutter:
   assets:
     - assets/audio/
     - assets/fonts/
+    # M6.9 音景动态场景：每首音景配一段对应的静音循环视频
+    - assets/scene/
 
   # §4.3 字体（OFL，已子集化：tool/font_subset.py）
   # 正文不打包字体：走系统 CJK 字体，保证 LLM 动态文本零缺字（M6.8）
