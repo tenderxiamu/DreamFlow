@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- M6：启动屏与自适应图标用色（夜墨 canvas，§5 令牌） -->
+    <color name="launch_bg">#14161A</color>
+    <color name="launcher_adaptive_bg">#14161A</color>
+</resources>

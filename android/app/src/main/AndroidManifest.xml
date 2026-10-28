@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- M4：LLM 对话云服务请求（release 包不自动注入，必须显式声明） -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- M5：渐进式唤醒精确闹钟（Android 12+ 需要用户在设置中授予） -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
         android:maxSdkVersion="32" />

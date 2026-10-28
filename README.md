@@ -15,6 +15,25 @@
 `assets/audio/` 内音景来自 Pixabay（Pixabay Content License，可免费商用、无需署名），
 逐条授权登记见 [assets/AUDIO_LICENSES.md](assets/AUDIO_LICENSES.md)。
 
+## 产物
+
+`build/app/outputs/flutter-apk/`
+
+| 文件 | 说明 | 体积 |
+|---|---|---|
+| `app-release.apk` | 全 ABI 内测包（arm64-v8a / armeabi-v7a / x86_64） | 约 81 MB |
+| `app-arm64-v8a-release.apk` | 主流真机包（推荐分发） | 约 43 MB |
+| `app-armeabi-v7a-release.apk` | 32 位老机型 | 约 41 MB |
+| `app-x86_64-release.apk` | 模拟器 | 约 45 MB |
+
+> release 包当前使用 debug 签名（Flutter 模板默认），仅供内测安装；上架前需配置正式 keystore。
+
+## 图标与启动屏
+
+- 图标：`tool/make_icons.py` 生成（夜墨渐变 + 雾粉月牙 + 马善政体「梦」），
+  Android 全密度 mipmap + 自适应图标（`mipmap-anydpi-v26`）+ iOS 19 尺寸 AppIcon
+- 启动屏：夜墨 `#14161A`（与首屏睡前模式无缝衔接），见 `res/drawable*/launch_background.xml`
+
 ## 构建（国内网络环境）
 
 ```bash
@@ -39,4 +58,4 @@ flutter build apk --debug
 | M3 | 音景播放 + 后台播放 + 锁屏控制 | ✅ |
 | M4 | LLM 对话（情绪识别卡 + 免责注脚合规） | ✅ |
 | M5 | 渐进式唤醒（浅睡窗口 + 唤醒通知）+ 本地睡眠报告 | ✅ |
-| M6 | 图标/启动屏/双端打包分发 | ⬜ |
+| M6 | 图标/启动屏/双端打包分发 | ✅ |
