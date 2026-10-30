@@ -72,4 +72,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // M9 相册选图：读照片的 EXIF 旋转角（BitmapFactory 不解 EXIF，不转会躺下）
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

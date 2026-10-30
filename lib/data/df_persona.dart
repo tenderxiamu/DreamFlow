@@ -66,7 +66,11 @@ class DfPersona {
   ///
   /// [round] 是今天已经聊过的轮数，用来给模型一个「已经开始聊了」的暗示，
   /// 避免每条回复都像刚认识。
-  static String system({required DateTime now, int round = 0}) {
+  ///
+  /// [name] 是用户在「我的」里给自己起的名字。**必须传**：
+  /// 首页会念「晚上好，白日梦」，如果对话里模型回一句「你还没告诉过我你叫什么」，
+  /// 用户会觉得这个 App 有两套记忆。名字属于「已知信息」，不属于「让对方自我介绍」。
+  static String system({required DateTime now, int round = 0, String? name}) {
     final String hh = now.hour.toString().padLeft(2, '0');
     final String mm = now.minute.toString().padLeft(2, '0');
     final StringBuffer b = StringBuffer(core)
@@ -74,6 +78,12 @@ class DfPersona {
       ..writeln('【此刻】')
       ..writeln('现在是 ${now.year}年${now.month}月${now.day}日 周${_week[now.weekday - 1]} $hh:$mm。')
       ..writeln(_stageOf(now));
+    final String nick = name?.trim() ?? '';
+    if (nick.isNotEmpty) {
+      b.writeln('他给自己起的名字是「$nick」，首页和「我的」都这样称呼他。'
+          '你知道这个名字，不需要再问他叫什么；但也不要每句都喊，'
+          '一天里偶尔叫一次就够，叫多了像营业。');
+    }
     if (round > 0) {
       b.writeln('这是你们今天聊的第 $round 轮之后的回复，不要再用开场白，直接接住他上一句。');
     }

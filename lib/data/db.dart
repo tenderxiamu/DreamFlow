@@ -50,6 +50,18 @@ class DreamFlowDb extends _$DreamFlowDb {
   /// 全局单例（UI 直接取用；一次 app 生命周期一个库连接）
   static final DreamFlowDb instance = DreamFlowDb();
 
+  /// 注销账号时用：清空本机全部业务数据（账号文件由 DfAccount 自己删）。
+  ///
+  /// 只删表内容，不 drop 表 —— 下次登录还是这张表，省掉重建 schema 的麻烦。
+  /// 放在一个事务里，避免清到一半断电留下半套数据。
+  Future<void> wipeAllData() {
+    return transaction(() async {
+      await delete(chatMessages).go();
+      await delete(moodRecords).go();
+      await delete(sleepSessions).go();
+    });
+  }
+
   // ---- 查询骨架（M3-M5 逐屏接数据） ----
 
   /// D 报告屏：最近 N 次会话（按开始时间倒序）

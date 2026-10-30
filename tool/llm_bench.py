@@ -1,7 +1,11 @@
 """用真实人设 prompt 跑多轮对话，比较模型质量与延迟。"""
-import json, re, time, sys, urllib.request
+import json, os, re, time, sys, urllib.request
 
-KEY = "wbpk_pUURzTry1oNEGkRUYBORY5_fbRCvGIGwL0DglMprAzUX9yhrocoDCeK"
+# publishableKey 不再硬编码（M9.2）：从环境变量读取，仓库里不留明文。
+# 用法：DF_WB_KEY=wbpk_xxx python tool/llm_bench.py [模型ID...]
+KEY = os.environ.get("DF_WB_KEY", "")
+if not KEY:
+    sys.exit("缺少环境变量 DF_WB_KEY（publishableKey，见 lib/data/cloud_config.dart 运行时拼装）")
 URL = "https://dreamflow-sleep.app.workbuddy.host/.cloud/llm/chat/completions"
 DART = "dreamflow_flutter/lib/data/df_persona.dart"
 

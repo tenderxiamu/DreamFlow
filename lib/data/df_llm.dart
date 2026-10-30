@@ -57,7 +57,9 @@ class DfLlmClient {
   static const String defaultModel = 'glm-5.3-flash';
 
   /// 兜底模型：实测首字更快（~1.8s），文风略平，仅在主模型不可用时使用。
-  static const String fallbackModel = 'minimax-m3';
+  /// 注：原 `minimax-m3` 已从云服务模型目录下线（2026-10-30 核对），
+  /// 换成同倍率（x0.08 低价档）的现行 ID。
+  static const String fallbackModel = 'minimax-m3.1-flash';
 
   /// 输出上限。人设要求 ≤120 字（危机话术可更长），320 token 足够，
   /// 同时把最坏耗时兜住，避免模型越写越长把「慢」写回来。

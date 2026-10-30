@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../audio/df_soundscape.dart';
 import '../data/sleep_schedule.dart';
 import '../design_system/df_theme.dart';
+import '../screens/df_account_gate.dart';
 import 'router.dart';
 import 'theme_provider.dart';
 
@@ -32,7 +33,11 @@ class DreamFlowApp extends ConsumerWidget {
       builder: (BuildContext context, Widget? child) {
         return DefaultTextStyle(
           style: const TextStyle(decoration: TextDecoration.none),
-          child: _AlarmGate(child: child ?? const SizedBox.shrink()),
+          // M7：未登录时在最外层盖一层登录弹窗（挂在 Navigator 之上，
+          // 所以登录态一变就直接消失，不用碰路由栈）
+          child: DfAccountGate(
+            child: _AlarmGate(child: child ?? const SizedBox.shrink()),
+          ),
         );
       },
     );

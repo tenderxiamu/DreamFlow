@@ -293,16 +293,20 @@ class _DfIconButtonState extends State<DfIconButton> {
   Widget build(BuildContext context) {
     final DfPalette p = DfPalette.of(context);
     final bool big = widget.size >= DfTouch.play;
+    // 禁用态必须**看得出来**：按钮能点但没反应，和按钮明显是灰的，
+    // 用户对前者的判断是"卡了"，对后者是"等一下"
+    final bool enabled = widget.onPressed != null;
 
     return DfFocusRing(
       radius: widget.size / 2,
-      enabled: widget.onPressed != null,
+      enabled: enabled,
       onActivate: widget.onPressed,
       child: Semantics(
         button: true,
+        enabled: enabled,
         label: widget.semanticLabel,
         child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),
         child: GestureDetector(
@@ -315,31 +319,36 @@ class _DfIconButtonState extends State<DfIconButton> {
             scale: _pressed ? 0.96 : 1,
             duration: DfMotion.dur,
             curve: DfMotion.ease,
-            child: AnimatedContainer(
+            child: AnimatedOpacity(
+              opacity: enabled ? 1 : 0.34,
               duration: DfMotion.dur,
               curve: DfMotion.ease,
-              transform: Matrix4.translationValues(0, _hover ? -1 : 0, 0),
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(
-                color: p.mistBlue,
-                shape: BoxShape.circle,
-                boxShadow: big
-                    ? <BoxShadow>[
-                        BoxShadow(
-                          color: p.glow,
-                          blurRadius: 26,
-                          offset: const Offset(0, 10),
-                        ),
-                      ]
-                    : null,
-              ),
-              alignment: Alignment.center,
-              child: DfIcon(
-                widget.glyph,
-                size: big ? 24 : 20,
-                color: p.onMist,
-                strokeWidth: 1.7,
+              child: AnimatedContainer(
+                duration: DfMotion.dur,
+                curve: DfMotion.ease,
+                transform: Matrix4.translationValues(0, _hover ? -1 : 0, 0),
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  color: p.mistBlue,
+                  shape: BoxShape.circle,
+                  boxShadow: big
+                      ? <BoxShadow>[
+                          BoxShadow(
+                            color: p.glow,
+                            blurRadius: 26,
+                            offset: const Offset(0, 10),
+                          ),
+                        ]
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: DfIcon(
+                  widget.glyph,
+                  size: big ? 24 : 20,
+                  color: p.onMist,
+                  strokeWidth: 1.7,
+                ),
               ),
             ),
           ),

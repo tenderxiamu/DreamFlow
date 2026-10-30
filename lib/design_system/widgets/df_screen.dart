@@ -6,9 +6,10 @@ import '../df_tokens.dart';
 import '../df_type.dart';
 import 'df_controls.dart';
 import 'df_sheep.dart';
+import 'df_wallpaper.dart';
 
 /// §2 屏幕结构：状态栏（按系统 safe-area）→ 内容区（纵向流）→ 底部锚定区。
-/// 背景 = 画布底 + 右上/左下墨晕 + 纸纹颗粒。
+/// 背景 = 画布底 →（壁纸）→ 右上/左下墨晕 → 纸纹颗粒。
 class DfScreenScaffold extends StatelessWidget {
   const DfScreenScaffold({
     super.key,
@@ -56,6 +57,8 @@ class DfScreenScaffold extends StatelessWidget {
       decoration: BoxDecoration(color: p.canvas),
       child: Stack(
         children: <Widget>[
+          // 壁纸在墨晕之下：墨晕是「纸的呼吸」，应该在所有背景之上
+          const Positioned.fill(child: DfWallpaper()),
           Positioned.fill(
             child: RepaintBoundary(
               child: CustomPaint(

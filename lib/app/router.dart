@@ -9,7 +9,7 @@ import '../data/sleep_schedule.dart';
 import '../data/sleep_session_recorder.dart';
 import '../design_system/df_theme.dart';
 import '../design_system/widgets/df_states.dart';
-import '../screens/df_about_screen.dart';
+import '../screens/df_profile_screen.dart';
 import '../screens/df_chat_session.dart';
 import '../screens/df_home_screen.dart';
 import '../screens/df_report_screen.dart';
@@ -95,7 +95,7 @@ StatefulShellRoute buildShellRoute() {
         GoRoute(
           path: '/about',
           builder: (BuildContext context, GoRouterState state) {
-            return DfAboutScreen(
+            return DfProfileScreen(
               onTab: (int i) => StatefulNavigationShell.of(context).goBranch(i),
             );
           },

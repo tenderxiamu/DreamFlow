@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import 'package:dreamflow/data/db.dart';
+import 'package:dreamflow/data/df_account.dart';
 import 'package:dreamflow/data/df_llm.dart';
+import 'package:dreamflow/data/df_mood.dart';
 import 'package:dreamflow/data/df_persona.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
@@ -34,7 +36,12 @@ class DfMessage {
 
 /// 会话引擎的裁决结果：回复文本 + 可选强调片段 + 可选 chip 更新
 class _EngineReply {
-  const _EngineReply(this.text, {this.emphasis, this.chips});
+  const _EngineReply(
+    this.text, {
+    this.emphasis,
+    this.chips,
+    this.crisis = false,
+  });
 
   final String text;
 
@@ -43,6 +50,9 @@ class _EngineReply {
 
   /// 情绪 chip（null = 保持不变；提问 / 闲聊不应覆盖用户的情绪标签）
   final List<String>? chips;
+
+  /// 命中危机信号 → 置顶求助卡 + 关掉「就去睡吧」出口
+  final bool crisis;
 }
 
 /// §7 B 睡前情绪对话 —— **引导式、按天分会话**。
@@ -70,7 +80,7 @@ class DfChatSession extends StatefulWidget {
   /// 对方"正在输入"到回复落地的延时
   final Duration replyDelay;
 
-  /// 进入 §7 C 沉浸助眠（交流两轮后出现「就去睡吧」出口）
+  /// 进入 §7 C 沉浸助眠（**一轮**对话收到回复后出现「就去睡吧」出口）
   final VoidCallback? onEnterSleep;
 
   /// Tab 切换（0 首页 / 1 对话 / 2 助眠 / 3 我的）
@@ -148,6 +158,13 @@ class _DfChatSessionState extends State<DfChatSession> {
   List<String> _chips = const <String>[];
   String? _errorText;
 
+  /// 本次会话出现过危机信号（自伤/自杀意图）。
+  ///
+  /// 一旦置位：顶栏常驻求助卡、「就去睡吧」出口隐藏 —— 这种时候
+  /// 最不该做的事就是把用户往床上送、然后说晚安。
+  /// 只往上置，不自动消；跨天新会话才重置。
+  bool _crisis = false;
+
   /// 会话归属日（跨天检测用）
   late DateTime _sessionDay = _dayOf(DateTime.now());
 
@@ -200,6 +217,12 @@ class _DfChatSessionState extends State<DfChatSession> {
         _messages.addAll(widget.seed);
         _loading = false;
         _showTopics = false;
+        // 种子历史代表「今天已经聊过」：出口条件与危机扫描都按真实历史算，
+        // 否则测试注入口和真实链路的行为会分叉
+        _sentOnce = widget.seed.any((DfMessage m) => m.mine);
+        _crisis = widget.seed.any(
+          (DfMessage m) => m.mine && DfMood.isCrisis(m.text),
+        );
       });
       return;
     }
@@ -226,6 +249,11 @@ class _DfChatSessionState extends State<DfChatSession> {
         final bool askedToday = rows.any((ChatMessage m) => m.mine);
         _showTopics = !askedToday;
         _sentOnce = askedToday;
+        // 退出重进不能把求助卡弄丢：今天说过的话里只要有一句危机信号，
+        // 重新打开照样置顶
+        _crisis = rows.any(
+          (ChatMessage m) => m.mine && DfMood.isCrisis(m.body),
+        );
       }
       _loading = false;
     });
@@ -244,6 +272,9 @@ class _DfChatSessionState extends State<DfChatSession> {
         _messages.clear();
         _chips = const <String>[];
         _sentOnce = false;
+        // 跨天重置：昨天的危机不能把今天的「就去睡吧」永远锁死。
+        // 今天若再出现信号，会重新置位。
+        _crisis = false;
         _showTopics = true;
         _loading = false;
         _messages.add(DfMessage(DfChatSession.greetingFor(now)));
@@ -255,17 +286,25 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   /// §12 缺口 3：空内容发起时走 field 错误态，而不是静默丢弃
   void _send() {
-    // 上一条还在流式输出时不接新消息，避免两个回复交错
-    if (_awaitingReply) return;
+    // 上一条还在回复时不接新消息，避免两个回复交错。
+    // 但不静默丢弃 —— 用户打完字点了发送却毫无反应，只会以为 App 卡了。
+    if (_awaitingReply) {
+      setState(() => _errorText = '等我说完这句');
+      return;
+    }
     final String text = _input.text.trim();
     if (text.isEmpty) {
       setState(() => _errorText = '至少说一句话');
       return;
     }
+    // 危机信号在**发出之前**就置位：顶栏求助卡立刻可见，
+    // 不等模型回完再判断（模型可能慢、可能失败、可能答偏）
+    final bool crisis = DfMood.isCrisis(text);
     setState(() {
       _errorText = null;
       _sentOnce = true;
       _showTopics = false;
+      if (crisis) _crisis = true;
       _messages.add(DfMessage(text, mine: true, at: DateTime.now()));
       _awaitingReply = true;
     });
@@ -382,6 +421,9 @@ class _DfChatSessionState extends State<DfChatSession> {
         DfPersona.system(
           now: DateTime.now(),
           round: _rounds > 0 ? _rounds - 1 : 0,
+          // 首页叫他「白日梦」，对话里就不能说「你还没告诉过我」——
+          // 同一个 App 两套记忆，用户第一句就出戏
+          name: DfAccount.instance.username,
         ),
       ),
       for (final DfMessage m in recent)
@@ -431,6 +473,8 @@ class _DfChatSessionState extends State<DfChatSession> {
       emphasis = fallback.emphasis;
       if (chips == null && fallback.chips != null) chips = fallback.chips;
     }
+    // 模型链路失败退回规则引擎时，危机标记同样要生效
+    final bool crisisHit = fallback?.crisis ?? false;
 
     if (!mounted) return;
     setState(() {
@@ -438,6 +482,7 @@ class _DfChatSessionState extends State<DfChatSession> {
       _streamText.value = '';
       _awaitingReply = false;
       if (error != null) _errorText = error;
+      if (crisisHit) _crisis = true;
       if (shown.isNotEmpty) {
         _messages.add(DfMessage(shown, emphasis: emphasis, at: DateTime.now()));
       }
@@ -453,76 +498,78 @@ class _DfChatSessionState extends State<DfChatSession> {
 
   // ───────────────────────────────────────────────────────────────────────
   // 会话引擎（确定性规则，不联网、不调模型；接真实 NLP 时只需替换 [_engine]）
+  //
+  // 语义判定（危机 / 情绪 / 否定 / 提问句式 / 引用截断）全在
+  // `lib/data/df_mood.dart` —— 纯函数，单测能直接打边界；
+  // 这里只负责「说什么话」。
   // ───────────────────────────────────────────────────────────────────────
 
-  static final RegExp _questionPattern = RegExp(
-    r'[?？]|你叫|名字|你是谁|你是|什么|怎么|为什么|能不能|可以吗|可以不|会不会|有没有|几点|多少|哪里|在哪|干嘛|干啥',
-  );
-
   _EngineReply _engine(String text) {
-    // ① 提问意图
-    if (_questionPattern.hasMatch(text)) return _answerQuestion(text);
+    // ① 危机信号：最高优先。不套情绪模板，也不再把人往"睡觉"上引
+    if (DfMood.isCrisis(text)) return _crisisReply();
 
-    // ② 情绪倾诉
-    final List<String> moods = _moodHits(text);
+    // ② 情绪倾诉优先于问答
+    //
+    // 旧实现先判提问，于是「我今天什么都不想做」命中「什么」→ 被当成提问，
+    // 回一句"这个我先记下，不急着答"，chip 也不更新。临床上「什么都不想做」
+    // 是兴趣丧失（anhedonia）的核心表达，这样等于把风险信号关掉（报告 D-01）。
+    // 现在只要识别到情绪就先回情绪；「你叫什么名字」没有情绪词，仍走问答。
+    final List<String> moods = DfMood.hits(text);
     if (moods.isNotEmpty) {
-      return _EngineReply(_moodReply(moods.first), chips: moods.take(2).toList());
+      return _EngineReply(
+        _moodReply(moods.first),
+        chips: moods.take(2).toList(),
+      );
     }
 
-    // ③ 兜底：回声式共情
+    // ③ 明确在问
+    if (DfMood.isQuestion(text)) return _answerQuestion(text);
+
+    // ④ 兜底：回声式共情
     return _EngineReply(
-      '「${_quote(text)}」——我记下了。不用急着解释它，愿意的话，说说它是什么感受？',
+      '「${DfMood.quote(text)}」——我记下了。不用急着解释它，愿意的话，说说它是什么感受？',
     );
   }
+
+  /// 危机引导：给号码、给渠道、说清「我不该是唯一陪你的那个」。
+  ///
+  /// 不承诺保密、不承诺疗愈、不追问细节 —— 这类场景下把人往专业渠道送
+  /// 才是负责的做法；只说"我陪你"然后就没了，是最危险的一种温柔。
+  static _EngineReply _crisisReply() => const _EngineReply(
+        '听到你这么说，我很在意。今晚先别一个人扛着——'
+        '如果你有伤害自己的念头，请马上打 12356（全国心理援助热线，7×24 有人接），'
+        '或者 120。我会在这儿陪着，但我不该是唯一陪着你的那个人。',
+        emphasis: '12356',
+        crisis: true,
+      );
 
   static bool _isAboutName(String text) =>
       RegExp('你叫|名字|你是梦洄|怎么称呼').hasMatch(text);
 
   _EngineReply _answerQuestion(String text) {
     if (_isAboutName(text)) {
-      return _EngineReply(
+      return const _EngineReply(
         '我叫梦洄——「梦」是夜里的梦，「洄」是水的洄游，绕一圈、回到安静。今晚由我陪你。',
         emphasis: '梦洄',
       );
     }
     if (RegExp('你是谁|你能|干嘛|干啥|功能|怎么用|这是什么|这个app|这个软件').hasMatch(text)) {
-      return _EngineReply(
+      return const _EngineReply(
         '我是你的睡前陪伴：先陪你把心里的事说完，再用音景和呼吸帮你沉下去。今晚想从哪件说起？',
         emphasis: '睡前陪伴',
       );
     }
     if (RegExp('几点|时间|钟点|现在多晚').hasMatch(text)) {
-      return _EngineReply(
+      return const _EngineReply(
         '时间就按你手机走的来。今晚不用盯紧它——慢下来，才是这里唯一的日程。',
       );
     }
+    // 旧措辞是「这个我先记下，不急着答」——对一句倾诉说"不急着答"，
+    // 等于告诉用户"你的话不值得回应"。答不上来就说答不上来。
     return _EngineReply(
-      '这个我先记下，不急着答——今晚我更擅长陪你把心放下。你刚说到「${_quote(text)}」，想多听一点。',
+      '这个我确实答不上来，不想糊弄你。但我更想听你说——'
+      '刚那句「${DfMood.quote(text)}」，是怎么想到的？',
     );
-  }
-
-  /// 从原话中截取可引用的片段（去标点，最多 8 字）
-  static String _quote(String text) {
-    final String clean = text.replaceAll(RegExp(r'[，。！？、,.!?~…\s]'), '');
-    if (clean.isEmpty) return '这句话';
-    return clean.length <= 8 ? clean : clean.substring(0, 8);
-  }
-
-  /// 关键词 → 情绪命中（确定性规则；接真实模型时改这里）
-  static const Map<String, List<String>> _moodRules = <String, List<String>>{
-    '焦虑': <String>['焦虑', '紧张', '担心', '怕', '慌', '压力'],
-    '疲惫': <String>['累', '疲惫', '没劲', '透支'],
-    '入睡困难': <String>['睡不着', '失眠', '醒着', '躺了很久'],
-    '低落': <String>['难过', '委屈', '低落', '想哭', '孤单'],
-    '烦躁': <String>['烦', '生气', '火大', '忍不住'],
-  };
-
-  List<String> _moodHits(String text) {
-    final List<String> hit = <String>[];
-    for (final MapEntry<String, List<String>> e in _moodRules.entries) {
-      if (e.value.any(text.contains)) hit.add(e.key);
-    }
-    return hit;
   }
 
   String _moodReply(String primary) {
@@ -629,6 +676,12 @@ class _DfChatSessionState extends State<DfChatSession> {
           ),
           const SizedBox(height: 20),
 
+          // 危机信号一旦出现就常驻置顶：后面的回复再温柔，也不能盖住热线
+          if (_crisis) ...<Widget>[
+            const _CrisisBanner(),
+            const SizedBox(height: 18),
+          ],
+
           if (_loading)
             Padding(
               padding: const EdgeInsets.only(top: 40),
@@ -689,8 +742,10 @@ class _DfChatSessionState extends State<DfChatSession> {
               ),
             ],
 
-            // 完成一轮对话后给出「去睡」出口：对话不是无限聊天，终点是入睡
-            if (_hadRound && widget.onEnterSleep != null) ...<Widget>[
+            // 完成一轮对话后给出「去睡」出口：对话不是无限聊天，终点是入睡。
+            // 危机状态下**不给**这个出口 —— 「去睡吧」对一个说"不想活"的人
+            // 就是让他一个人关灯。
+            if (_hadRound && !_crisis && widget.onEnterSleep != null) ...<Widget>[
               const SizedBox(height: 14),
               const _SleepExitHint(),
               const SizedBox(height: 12),
@@ -720,10 +775,14 @@ class _DfChatSessionState extends State<DfChatSession> {
                   ),
                 ),
                 const SizedBox(width: 10),
+                // 图标说真话：原来这里是麦克风 + 语义「按住说话」，
+                // 实际行为却是"点一下把文本发出去"—— 屏幕阅读器用户
+                // 会去长按，长按什么也不会发生（报告 D-06）。
+                // 没有录音功能就别挂麦克风。
                 DfIconButton(
-                  glyph: DfGlyph.mic,
-                  semanticLabel: '按住说话',
-                  onPressed: _send,
+                  glyph: DfGlyph.send,
+                  semanticLabel: '发送',
+                  onPressed: _awaitingReply ? null : _send,
                 ),
               ],
             ),
@@ -1009,6 +1068,41 @@ class _HistorySheetState extends State<_HistorySheet> {
           ),
         );
       },
+    );
+  }
+}
+
+/// 危机求助卡：识别到自伤/自杀信号后常驻在会话顶部。
+///
+/// 用 `mistPink`（调色板里的「暖点/告警」）描边，不做成红色警示条 ——
+/// 用户此刻已经很慌，界面再加压只会让他直接关掉 App。
+/// 号码单独放大：慌张的人读不进长句，只读得进数字。
+class _CrisisBanner extends StatelessWidget {
+  const _CrisisBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    return DfCard(
+      borderColor: p.mistPink,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('如果你现在有伤害自己的念头',
+              style: DfType.bodyS(context, p.text)),
+          const SizedBox(height: 12),
+          Text('12356', style: DfType.titleS(context, p.mistPink)),
+          const SizedBox(height: 4),
+          Text('全国心理援助热线 · 7×24 · 免费',
+              style: DfType.caption(context, p.text2)),
+          const SizedBox(height: 10),
+          Text(
+            '情况紧急、已经动手了，直接打 120。'
+            '我会在这儿陪你说话，但我不该是唯一陪着你的那个。',
+            style: DfType.caption(context, p.text3),
+          ),
+        ],
+      ),
     );
   }
 }

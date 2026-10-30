@@ -7,7 +7,7 @@ import '../df_tokens.dart';
 /// `pause` 为播放键的**第二态**（§7 C 播放 / 暂停切换），非新图标：
 /// 与 `play` 共用同一个圆形按钮位与语义标签「播放 / 暂停」。
 /// `back` 为二级页返回键所需（设计稿未包含返回控件，属落地必补件）。
-enum DfGlyph { home, chat, moon, profile, mic, play, pause, prev, next, back }
+enum DfGlyph { home, chat, moon, profile, mic, play, pause, prev, next, back, send }
 
 class DfIcon extends StatelessWidget {
   const DfIcon(this.glyph, {super.key, this.size = 20, this.color, this.strokeWidth = 1.6});
@@ -153,6 +153,14 @@ class _DfGlyphPainter extends CustomPainter {
         p.moveTo(11, 5.5);
         p.lineTo(4.5, 12);
         p.lineTo(11, 18.5);
+      case DfGlyph.send:
+        // 上箭头。和其余字形同一套细线，不用纸飞机 ——
+        // 这个按钮的作用就是"发出去"，箭头比飞机少一层解读
+        p.moveTo(12, 19.6);
+        p.lineTo(12, 5);
+        p.moveTo(5.6, 11.4);
+        p.lineTo(12, 5);
+        p.lineTo(18.4, 11.4);
     }
 
     final Paint paint = Paint()

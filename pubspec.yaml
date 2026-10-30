@@ -38,6 +38,10 @@ flutter:
     - assets/fonts/
     # M6.9 音景动态场景：每首音景配一段对应的静音循环视频
     - assets/scene/
+    # M7.2 天空壁纸（实拍云，tool/make_wallpaper.py 处理成 9:19 竖屏并重模糊）
+    - assets/wallpaper/
+    # M7.3 首页插画（画师原图 1440x1079，tool/make_poster.py 修掉画面上的文字）
+    - assets/poster/
 
   # §4.3 字体（OFL，已子集化：tool/font_subset.py）
   # 正文不打包字体：走系统 CJK 字体，保证 LLM 动态文本零缺字（M6.8）

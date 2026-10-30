@@ -5,17 +5,49 @@ import 'package:video_player/video_player.dart';
 
 import '../df_tokens.dart';
 
-/// §6.13b 音景动态场景（M6.9）
+// §6.13b 音景动态场景（M6.9）
+//
+// 用一段**静音的循环短视频**替代静态墨山，让画面和正在响的声音对上：
+// 深海洄游配月光下的浪，远山松风配林间风动，檐下雨声配落雨，
+// 空谷白噪配流动的雾。
+//
+// 三条硬约束（这是助眠场景，不是宣传片）：
+// 1. **音量恒为 0** —— 声音只有一个来源，就是音景本身
+// 2. **只在「音景在放 + 页面可见 + App 在前台」时推进**，锁屏或切到别的
+//    tab 立刻暂停。否则整夜解码，电量撑不住
+// 3. 加载中 / 解码失败一律退回 fallback（原来的静态场景），绝不黑屏
+
+/// 亮度参数（M6.9.3）
 ///
-/// 用一段**静音的循环短视频**替代静态墨山，让画面和正在响的声音对上：
-/// 深海洄游配月光下的浪，远山松风配林间风动，檐下雨声配落雨，
-/// 空谷白噪配流动的雾。
+/// 素材实测（第 2.5 秒抽帧，1344×768）：
+///   p10=0  p25=7.8  p50=18.6  p75=24.2  p95=34.4  max=119  mean=17
+/// 整帧几乎全挤在 0–35，连「白色泡沫」的最亮点都只有 119 —— 也就是说
+/// **素材里根本不存在高光**，任何线性增益都救不回来（1.34/34 实测 mean 也只有 56）。
 ///
-/// 三条硬约束（这是助眠场景，不是宣传片）：
-/// 1. **音量恒为 0** —— 声音只有一个来源，就是音景本身
-/// 2. **只在「音景在放 + 页面可见 + App 在前台」时推进**，锁屏或切到别的
-///    tab 立刻暂停。否则整夜解码，电量撑不住
-/// 3. 加载中 / 解码失败一律退回 [fallback]（原来的静态场景），绝不黑屏
+/// 所以改成两步，先开暗部再拉对比：
+/// 1. [kScreenTint] 用 `BlendMode.screen` 垫一层蓝灰。screen 是非线性的：
+///    `1-(1-a)(1-b)`，暗部被抬起最多、高光几乎不动，正好对上这种「全黑但有细节」的素材
+/// 2. [kGain] 再线性乘一道，把 screen 压平的对比拉回来
+///
+/// 实测这一组：mean 27→78、p50 80、max 216（不过曝），对比度仍有 1.37。
+/// 顺序要紧：里面 screen，外面 gain。
+const double kGain = 1.60;
+const int kScreenR = 28;
+const int kScreenG = 36;
+const int kScreenB = 46;
+
+/// 边缘遮罩透明度：上 / 下。到这个亮度已经不需要压边了，只留一丝让卡片咬合。
+const double kScrimTop = 0.02;
+const double kScrimBottom = 0.06;
+
+/// 画面放大倍数。
+///
+/// 素材左上角烧了一个「AI生成」水印（约 78×38 px，位于左上 6% 内）。
+/// 放大 1.14 后可见区域收窄到 87.7%，左右各切掉 6.1%、上下各切 46 px，水印正好被裁掉。
+/// 顺带把 1344×768 的素材填得更满，240 高的卡片里细节更大一点。
+const double kSceneZoom = 1.14;
+
+/// 音景动态场景：静音循环视频 + 亮度提升 + 上下边缘夜色。
 ///
 /// 画面上再盖一层夜色遮罩，把视频的亮部压下去，让它和纸墨主题咬合，
 /// 而不是像贴了一块屏幕在纸上。
@@ -170,7 +202,6 @@ class _DfVideoSceneState extends State<DfVideoScene>
 
   @override
   Widget build(BuildContext context) {
-    final DfPalette p = DfPalette.of(context);
     final VideoPlayerController? c = _c;
 
     return SizedBox(
@@ -190,40 +221,55 @@ class _DfVideoSceneState extends State<DfVideoScene>
                 builder: (BuildContext context, double v, Widget? child) =>
                     Opacity(opacity: v, child: child),
                 child: SizedBox.expand(
-                  // 素材本身是深夜场景，原样贴上来偏闷；
-                  // 提亮 12% + 抬一点暗部（+8），既不刺眼也不会糊成一团黑
+                  // 两步提亮，见文件头 kGain / kScreenTint 的说明：
+                  // 里面 screen 垫暗部，外面 gain 拉回对比。
                   child: ColorFiltered(
                     colorFilter: const ColorFilter.matrix(<double>[
-                      1.12, 0, 0, 0, 8, //
-                      0, 1.12, 0, 0, 8, //
-                      0, 0, 1.12, 0, 8, //
+                      kGain, 0, 0, 0, 0, //
+                      0, kGain, 0, 0, 0, //
+                      0, 0, kGain, 0, 0, //
                       0, 0, 0, 1, 0, //
                     ]),
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      clipBehavior: Clip.hardEdge,
-                      child: SizedBox(
-                        width: c.value.size.width,
-                        height: c.value.size.height,
-                        child: VideoPlayer(c),
+                    child: ColorFiltered(
+                      colorFilter: ColorFilter.mode(
+                        const Color.fromARGB(255, kScreenR, kScreenG, kScreenB),
+                        BlendMode.screen,
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        clipBehavior: Clip.hardEdge,
+                        child: Transform.scale(
+                          // 裁掉左上角水印，顺便让细节在 240 高的卡片里更大
+                          scale: kSceneZoom,
+                          child: SizedBox(
+                            width: c.value.size.width,
+                            height: c.value.size.height,
+                            child: VideoPlayer(c),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             // 只在上下边缘压一点夜色，让画面和卡片咬合；
-            // 中间完全不加遮罩 —— 之前压到 0.42/0.16/0.58，浪花细节全被吃掉了
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    p.canvas.withValues(alpha: 0.20),
-                    p.canvas.withValues(alpha: 0.0),
-                    p.canvas.withValues(alpha: 0.30),
-                  ],
-                  stops: const <double>[0, 0.38, 1],
+            // 中间完全不加遮罩 —— 之前压到 0.42/0.16/0.58，浪花细节全被吃掉了。
+            //
+            // 遮罩固定用纯黑，不再取 p.canvas：宣纸主题的 canvas 是奶油白
+            // (0xFFF4F2EC)，盖上去等于给画面糊了一层雾，越盖越脏。
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      Colors.black.withValues(alpha: kScrimTop),
+                      Colors.black.withValues(alpha: 0),
+                      Colors.black.withValues(alpha: kScrimBottom),
+                    ],
+                    stops: const <double>[0, 0.38, 1],
+                  ),
                 ),
               ),
             ),

@@ -55,5 +55,27 @@ void main() {
       expect(DfPersona.system(now: t, round: 0), isNot(contains('之后的回复')));
       expect(DfPersona.system(now: t, round: 2), contains('第 2 轮'));
     });
+
+    test('知道用户的名字，并且不要求对方自我介绍', () {
+      final String s = DfPersona.system(
+        now: DateTime(2026, 10, 28, 22, 10),
+        name: '白日梦',
+      );
+      expect(s, contains('「白日梦」'));
+      expect(s, contains('不需要再问他叫什么'));
+    });
+
+    test('没有名字时不注入，也绝不编一个', () {
+      final String s = DfPersona.system(now: DateTime(2026, 10, 28, 22, 10));
+      expect(s, isNot(contains('他给自己起的名字')));
+    });
+
+    test('空白名字视同没有', () {
+      final String s = DfPersona.system(
+        now: DateTime(2026, 10, 28, 22, 10),
+        name: '   ',
+      );
+      expect(s, isNot(contains('他给自己起的名字')));
+    });
   });
 }
