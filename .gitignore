@@ -54,3 +54,6 @@ key.properties
 
 # 全量源字体（约 30 MiB，仅子集化时用）：tool/font_subset.py 从这读
 tool/fonts_src/
+
+# DDC 编译缓存：构建产物不入库（曾把旧版含明文 key 的产物推上远程，M9.2 清理）
+tool/_ddc/

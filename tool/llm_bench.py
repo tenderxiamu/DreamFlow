@@ -2,7 +2,7 @@
 import json, os, re, time, sys, urllib.request
 
 # publishableKey 不再硬编码（M9.2）：从环境变量读取，仓库里不留明文。
-# 用法：DF_WB_KEY=wbpk_xxx python tool/llm_bench.py [模型ID...]
+# 用法：DF_WB_KEY=<你的key> python tool/llm_bench.py [模型ID...]
 KEY = os.environ.get("DF_WB_KEY", "")
 if not KEY:
     sys.exit("缺少环境变量 DF_WB_KEY（publishableKey，见 lib/data/cloud_config.dart 运行时拼装）")
