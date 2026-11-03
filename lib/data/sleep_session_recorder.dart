@@ -49,12 +49,15 @@ class SleepSessionRecorder {
       snoozes: snoozes,
     );
     try {
+      // M11：不再写「深睡 = 时长 × 25%」——没有传感器就测不出深睡，
+      // 编一个数只会让报告看起来像真的。字段保留（历史数据兼容），恒为 0，
+      // 报告屏改为展示可从时长诚实推算的「睡眠周期数」。
       final int id = await DreamFlowDb.instance
           .addSession(SleepSessionsCompanion.insert(
         startedAt: start,
         endedAt: Value(end),
         score: Value(score),
-        deepMinutes: Value((end.difference(start).inMinutes * 0.25).round()),
+        deepMinutes: const Value(0),
         awakenings: Value(snoozes),
       ));
       return SleepSession(
@@ -62,7 +65,7 @@ class SleepSessionRecorder {
         startedAt: start,
         endedAt: end,
         score: score,
-        deepMinutes: (end.difference(start).inMinutes * 0.25).round(),
+        deepMinutes: 0,
         awakenings: snoozes,
         note: null,
       );

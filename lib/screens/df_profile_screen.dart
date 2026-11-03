@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:dreamflow/app/theme_provider.dart';
@@ -312,6 +313,15 @@ class DfProfileScreen extends ConsumerWidget {
                 ? '${s.alarmLabel}${s.smartWake ? ' · 智能唤醒' : ''}'
                 : '已关闭',
             onTap: () => onTab?.call(2),
+          ),
+          _divider(p),
+          // M11：报告原来只能在「我醒了」之后看到，白天想回看没有入口
+          _row(
+            context,
+            p,
+            '睡眠报告',
+            '近 7 晚趋势 · 作息波动',
+            onTap: () => context.push('/report'),
           ),
           _divider(p),
           _row(
