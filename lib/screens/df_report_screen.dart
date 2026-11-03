@@ -370,7 +370,8 @@ class _TrendBar extends StatelessWidget {
         const SizedBox(height: 7),
         Text(
           point.label,
-          style: DfType.caption(context, latest ? p.text2 : p.text3),
+          // §3 注：`--text-3` 禁止放入卡片面（夜墨下 4.06:1），卡内弱信息一律 `--text-2`
+          style: DfType.caption(context, p.text2),
         ),
       ],
     );
