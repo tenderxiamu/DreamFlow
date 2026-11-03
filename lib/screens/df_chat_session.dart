@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:dreamflow/data/db.dart';
 import 'package:dreamflow/data/df_account.dart';
+import 'package:dreamflow/data/df_crisis_config.dart';
 import 'package:dreamflow/data/df_llm.dart';
 import 'package:dreamflow/data/df_mood.dart';
 import 'package:dreamflow/data/df_mood_summary.dart';
@@ -222,7 +223,7 @@ class _DfChatSessionState extends State<DfChatSession> {
         // 否则测试注入口和真实链路的行为会分叉
         _sentOnce = widget.seed.any((DfMessage m) => m.mine);
         _crisis = widget.seed.any(
-          (DfMessage m) => m.mine && DfMood.isCrisis(m.text),
+          (DfMessage m) => m.mine && _isCrisis(m.text),
         );
       });
       return;
@@ -253,7 +254,7 @@ class _DfChatSessionState extends State<DfChatSession> {
         // 退出重进不能把求助卡弄丢：今天说过的话里只要有一句危机信号，
         // 重新打开照样置顶
         _crisis = rows.any(
-          (ChatMessage m) => m.mine && DfMood.isCrisis(m.body),
+          (ChatMessage m) => m.mine && _isCrisis(m.body),
         );
       }
       _loading = false;
@@ -300,7 +301,7 @@ class _DfChatSessionState extends State<DfChatSession> {
     }
     // 危机信号在**发出之前**就置位：顶栏求助卡立刻可见，
     // 不等模型回完再判断（模型可能慢、可能失败、可能答偏）
-    final bool crisis = DfMood.isCrisis(text);
+    final bool crisis = _isCrisis(text);
     setState(() {
       _errorText = null;
       _sentOnce = true;
@@ -524,9 +525,14 @@ class _DfChatSessionState extends State<DfChatSession> {
   // 这里只负责「说什么话」。
   // ───────────────────────────────────────────────────────────────────────
 
+  /// M12：危机判定 = 内置底线词表 ∪ 远端下发的追加词表。
+  /// 底线词表在 [DfMood] 里写死，远端配置坏了 / 被清空也永远生效。
+  static bool _isCrisis(String text) =>
+      DfMood.isCrisisWith(text, DfCrisisConfig.instance.extraWords);
+
   _EngineReply _engine(String text) {
     // ① 危机信号：最高优先。不套情绪模板，也不再把人往"睡觉"上引
-    if (DfMood.isCrisis(text)) return _crisisReply();
+    if (_isCrisis(text)) return _crisisReply();
 
     // ② 情绪倾诉优先于问答
     //
@@ -1102,27 +1108,62 @@ class _CrisisBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final DfPalette p = DfPalette.of(context);
-    return DfCard(
-      borderColor: p.mistPink,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text('如果你现在有伤害自己的念头',
-              style: DfType.bodyS(context, p.text)),
-          const SizedBox(height: 12),
-          Text('12356', style: DfType.titleS(context, p.mistPink)),
-          const SizedBox(height: 4),
-          Text('全国心理援助热线 · 7×24 · 免费',
-              style: DfType.caption(context, p.text2)),
-          const SizedBox(height: 10),
-          Text(
-            '情况紧急、已经动手了，直接打 120。'
-            '我会在这儿陪你说话，但我不该是唯一陪着你的那个。',
-            style: DfType.caption(context, p.text3),
+    // M12：热线列表跟随远端配置（底线 12356 恒为第一位，远端只能追加）
+    return ListenableBuilder(
+      listenable: DfCrisisConfig.instance,
+      builder: (BuildContext context, Widget? _) {
+        final DfPalette p = DfPalette.of(context);
+        final List<DfHotline> lines = DfCrisisConfig.instance.hotlines;
+        final DfHotline primary = lines.first;
+        final List<DfHotline> extras = lines.sublist(1);
+
+        return DfCard(
+          borderColor: p.mistPink,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('如果你现在有伤害自己的念头',
+                  style: DfType.bodyS(context, p.text)),
+              const SizedBox(height: 12),
+              Text(primary.number, style: DfType.titleS(context, p.mistPink)),
+              const SizedBox(height: 4),
+              Text(
+                '${primary.name} · ${primary.note.isEmpty ? '7×24 · 免费' : '${primary.note} · 免费'}',
+                style: DfType.caption(context, p.text2),
+              ),
+              for (final DfHotline h in extras) ...<Widget>[
+                const SizedBox(height: 8),
+                Text.rich(
+                  TextSpan(
+                    children: <InlineSpan>[
+                      TextSpan(
+                        text: h.number,
+                        style: DfType.number(
+                          context,
+                          DfFontSize.small,
+                          p.mistPink,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '  ${h.name}${h.note.isEmpty ? '' : ' · ${h.note}'}',
+                        style: DfType.caption(context, p.text2),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Text(
+                '情况紧急、已经动手了，直接打 120。'
+                '我会在这儿陪你说话，但我不该是唯一陪着你的那个。',
+                // §3 注：`--text-3` 禁止放入卡片面（夜墨下 4.06:1），用 `--text-2`
+                style: DfType.caption(context, p.text2),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

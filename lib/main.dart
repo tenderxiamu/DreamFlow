@@ -7,6 +7,7 @@ import 'app/app.dart';
 import 'app/router.dart';
 import 'audio/df_soundscape.dart';
 import 'data/df_account.dart';
+import 'data/df_crisis_config.dart';
 import 'data/df_wallpaper.dart';
 import 'data/sleep_schedule.dart';
 import 'data/wake_alarm.dart';
@@ -24,6 +25,10 @@ Future<void> main() async {
   await SleepSchedule.instance.load();
   // M7.2：壁纸选择。同样要在首帧前读回，否则会先纯色闪一下再出图
   await DfWallpapers.instance.load();
+  // M12：危机词表/热线。先读上次缓存（首帧前生效），再后台拉远端，
+  // 失败也不影响判定——底线词表永远内置
+  await DfCrisisConfig.instance.load();
+  unawaited(DfCrisisConfig.instance.refresh());
   // M5：唤醒通知（点通知回到 E 屏；失败静默降级为应用内 Timer）
   unawaited(WakeAlarm.init(onTap: handleNotificationTap));
   unawaited(SleepSchedule.instance.rescheduleAlarm());

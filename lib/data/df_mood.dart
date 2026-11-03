@@ -38,9 +38,19 @@ class DfMood {
     '想消失',
   ];
 
-  static bool isCrisis(String text) {
+  static bool isCrisis(String text) => isCrisisWith(text, const <String>[]);
+
+  /// 带远端追加词表的危机判定（M12）。
+  ///
+  /// [extraWords] 是远端下发的追加词，与底线词表取并集；
+  /// 底线词表不在这里传——调用方就算传了空表，底线判定也永远生效。
+  static bool isCrisisWith(String text, List<String> extraWords) {
     final String s = _normalize(text);
-    return crisisWords.any(s.contains);
+    if (crisisWords.any(s.contains)) return true;
+    for (final String w in extraWords) {
+      if (w.isNotEmpty && s.contains(_normalize(w))) return true;
+    }
+    return false;
   }
 
   // ── 情绪词表 ────────────────────────────────────────────────────────────

@@ -49,4 +49,11 @@ class DfCloudConfig {
   /// LLM API 路径（OpenAI 兼容，仅流式）
   static const String llmChatPath = '/.cloud/llm/chat/completions';
   static const String llmModelsPath = '/.cloud/llm/models';
+
+  /// M12：危机干预配置表（public-read 单行表，仅 SELECT 授权）。
+  ///
+  /// 运营改词表 / 热线不用发版：控制台或 MCP 改这一行，客户端启动时拉取，
+  /// 失败则退回上次缓存，再退回 [df_mood] 里的内置底线词表。
+  static const String crisisConfigPath =
+      '/.cloud/database/rest/v1/crisis_config?select=*&limit=1';
 }
