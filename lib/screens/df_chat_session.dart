@@ -7,6 +7,7 @@ import 'package:dreamflow/data/db.dart';
 import 'package:dreamflow/data/df_account.dart';
 import 'package:dreamflow/data/df_llm.dart';
 import 'package:dreamflow/data/df_mood.dart';
+import 'package:dreamflow/data/df_mood_summary.dart';
 import 'package:dreamflow/data/df_persona.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
@@ -314,10 +315,11 @@ class _DfChatSessionState extends State<DfChatSession> {
     if (llm != null) {
       _sendViaLlm(llm, text);
     } else {
-      // 规则引擎（离线 / 测试）：情绪命中即更新 chip
+      // 规则引擎（离线 / 测试）：情绪命中即更新 chip，并同样落库
       final _EngineReply reply = _engine(text);
-      if (reply.chips != null) {
+      if (reply.chips != null && reply.chips!.isNotEmpty) {
         setState(() => _chips = reply.chips!);
+        _recordMood(reply.chips!.first, 3);
       }
       _replyTimer?.cancel();
       _replyTimer = Timer(widget.replyDelay, () {
@@ -440,6 +442,18 @@ class _DfChatSessionState extends State<DfChatSession> {
         .catchError((Object _) => 0);
   }
 
+  /// 情绪落地（M10）：写库成功后广播「今天有新的记录」，首页那个卡才会动。
+  ///
+  /// 广播必须挂在写库**之后**：先广播的话首页会抢在 insert 前读到旧数据，
+  /// 卡片就还是不动 —— 这正是「数值永远不变」最隐蔽的一种成因。
+  void _recordMood(String label, int intensity) {
+    DreamFlowDb.instance
+        .addMood(label, intensity)
+        .timeout(const Duration(seconds: 3))
+        .then<void>((int _) => DfMoodToday.instance.recordAdded())
+        .catchError((Object _) {});
+  }
+
   /// 收尾：解析情绪标记 → chip + MoodRecords 落库；持久化助手消息；恢复输入
   Future<void> _finishLlmReply(
     String? text, {
@@ -449,6 +463,7 @@ class _DfChatSessionState extends State<DfChatSession> {
     String? emphasis;
     String shown = text ?? '';
     List<String>? chips;
+    bool moodRecorded = false;
 
     if (text != null) {
       final RegExpMatch? tag = DfPersona.moodTag.firstMatch(text);
@@ -460,10 +475,8 @@ class _DfChatSessionState extends State<DfChatSession> {
         if (label != '未知') {
           final int intensity =
               strength == '高' ? 5 : (strength == '中' ? 3 : 1);
-          DreamFlowDb.instance
-              .addMood(label, intensity)
-              .timeout(const Duration(seconds: 3))
-              .catchError((Object _) => 0);
+          _recordMood(label, intensity);
+          moodRecorded = true;
         }
       }
     }
@@ -472,6 +485,13 @@ class _DfChatSessionState extends State<DfChatSession> {
       shown = fallback.text;
       emphasis = fallback.emphasis;
       if (chips == null && fallback.chips != null) chips = fallback.chips;
+    }
+
+    // 模型链路失败（或没给情绪标记）时退回规则引擎：情绪也要落库。
+    // 否则「今晚聊了，首页还是没动」—— 用户看到的就是那张卡坏了。
+    // 规则引擎判不出强度，统一按「中」记；已由标记记过的不重复写。
+    if (!moodRecorded && chips != null && chips.isNotEmpty) {
+      _recordMood(chips.first, 3);
     }
     // 模型链路失败退回规则引擎时，危机标记同样要生效
     final bool crisisHit = fallback?.crisis ?? false;
