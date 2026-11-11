@@ -6,12 +6,21 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import android.provider.MediaStore
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.exifinterface.media.ExifInterface
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
+import java.time.Instant
+import kotlin.concurrent.thread
+import kotlinx.coroutines.runBlocking
 
 /**
  * M9 · 相册选图（头像 / 壁纸）
@@ -34,8 +43,19 @@ class MainActivity : AudioServiceActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingKind: String? = null
 
+    /// M13：健康数据授权页（系统弹的，不是我们画的）
+    ///
+    /// 为什么不用 `registerForActivityResult`：`FlutterActivity` 继承的是
+    /// `android.app.Activity`，不是 `ComponentActivity`，拿不到 ActivityResultLauncher。
+    /// 这里直接用 contract 的 `createIntent` / `parseResult` 走老的
+    /// `startActivityForResult` —— 同一个 contract，只是调用方式退一档。
+    private val healthPermissionContract: ActivityResultContract<Set<String>, Set<String>> =
+        PermissionController.createRequestPermissionResultContract()
+    private var healthPermissionResult: MethodChannel.Result? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -62,10 +82,141 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, HEALTH_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "status" -> healthStatus(result)
+                    "requestPermission" -> requestHealthPermission(result)
+                    "readSleep" -> {
+                        val startMs = call.argument<Number>("startMs")?.toLong() ?: 0L
+                        val endMs = call.argument<Number>("endMs")?.toLong() ?: 0L
+                        readSleep(startMs, endMs, result)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    // ── M13 健康数据（只读） ────────────────────────────────────────────────
+
+    /**
+     * 状态：available / needsUpdate / unavailable + 是否已授权。
+     *
+     * 只读**一项**权限：SLEEP。不申请心率、不申请写入 —— 报告要的就是睡眠，
+     * 多要一项都是对用户的不必要索取。
+     *
+     * `getGrantedPermissions()` 是 suspend，且要查 Health Connect 的连接状态，
+     * 所以整段丢到后台线程，算完再回主线程回包。
+     */
+    private fun healthStatus(result: MethodChannel.Result) {
+        thread(start = true) {
+            val payload: Map<String, Any> = try {
+                val state = when (HealthConnectClient.getSdkStatus(applicationContext)) {
+                    HealthConnectClient.SDK_AVAILABLE -> "available"
+                    HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "needsUpdate"
+                    else -> "unavailable"
+                }
+                var granted = false
+                if (state == "available") {
+                    val client = HealthConnectClient.getOrCreate(applicationContext)
+                    granted = runBlocking {
+                        client.permissionController.getGrantedPermissions()
+                    }.contains(HEALTH_SLEEP_PERMISSION)
+                }
+                mapOf("state" to state, "granted" to granted)
+            } catch (e: Exception) {
+                mapOf("state" to "unavailable", "granted" to false)
+            }
+            runOnUiThread { result.success(payload) }
+        }
+    }
+
+    private fun requestHealthPermission(result: MethodChannel.Result) {
+        if (healthPermissionResult != null) {
+            result.success(false) // 已经有一个授权页在等结果，别叠第二个
+            return
+        }
+        healthPermissionResult = result
+        try {
+            val intent =
+                healthPermissionContract.createIntent(this, setOf(HEALTH_SLEEP_PERMISSION))
+            startActivityForResult(intent, REQ_HEALTH)
+        } catch (e: Exception) {
+            // 没装 Health Connect / 系统版本不支持：静默降级，报告继续用推算
+            healthPermissionResult = null
+            result.success(false)
+        }
+    }
+
+    /**
+     * 读睡眠记录。
+     *
+     * 跨线程：`readRecords` 会查 Health Connect 的数据库，放在主线程上
+     * 首帧就会卡一下。这里丢到后台线程，读完再回主线程把结果交给 Dart。
+     */
+    private fun readSleep(startMs: Long, endMs: Long, result: MethodChannel.Result) {
+        thread(start = true) {
+            try {
+                val client = HealthConnectClient.getOrCreate(applicationContext)
+                val response = runBlocking {
+                    client.readRecords(
+                        ReadRecordsRequest(
+                            recordType = SleepSessionRecord::class,
+                            timeRangeFilter = TimeRangeFilter.between(
+                                Instant.ofEpochMilli(startMs),
+                                Instant.ofEpochMilli(endMs)
+                            ),
+                            ascendingOrder = true
+                        )
+                    )
+                }
+                val out = ArrayList<Map<String, Any?>>()
+                for (record in response.records) {
+                    val stages = ArrayList<Map<String, Any?>>()
+                    for (stage in record.stages) {
+                        stages.add(
+                            mapOf(
+                                "start" to stage.startTime.toEpochMilli(),
+                                "end" to stage.endTime.toEpochMilli(),
+                                "stage" to stage.stage
+                            )
+                        )
+                    }
+                    out.add(
+                        mapOf(
+                            "start" to record.startTime.toEpochMilli(),
+                            "end" to record.endTime.toEpochMilli(),
+                            "stages" to stages
+                        )
+                    )
+                }
+                runOnUiThread { result.success(out) }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.error("health_read_failed", e.message ?: "read failed", null)
+                }
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        // M13：健康数据授权回来。用户点「拒绝」时 resultCode 是 RESULT_CANCELED，
+        // parseResult 会给空集合 —— 这里不区分「拒绝」和「取消」，都回 false。
+        if (requestCode == REQ_HEALTH) {
+            val pending = healthPermissionResult
+            healthPermissionResult = null
+            val granted: Set<String> = try {
+                healthPermissionContract.parseResult(resultCode, data)
+            } catch (e: Exception) {
+                emptySet()
+            }
+            pending?.success(granted.contains(HEALTH_SLEEP_PERMISSION))
+            return
+        }
+
         if (requestCode != REQ_PICK) return
         val result = pendingResult
         val kind = pendingKind
@@ -163,5 +314,11 @@ class MainActivity : AudioServiceActivity() {
         const val KIND_WALLPAPER = "wallpaper"
         const val AVATAR_SIZE = 512
         const val WALLPAPER_MAX = 1600
+
+        const val HEALTH_CHANNEL = "dreamflow/health"
+        const val REQ_HEALTH = 4002
+
+        /** Health Connect 的睡眠只读权限（不申请写入，也不申请心率） */
+        const val HEALTH_SLEEP_PERMISSION = "android.permission.health.READ_SLEEP"
     }
 }

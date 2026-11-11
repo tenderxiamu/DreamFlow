@@ -1,18 +1,29 @@
 import '../screens/df_report_screen.dart';
 import 'db.dart';
+import 'df_health.dart';
+import 'health_sleep.dart';
 import 'light_sleep.dart';
 import 'sleep_analysis.dart';
 
-/// M5 / M11：本地报告聚合 —— 把 Drift 里的睡眠会话与情绪行折算成报告屏快照。
+/// M5 / M11 / M13：本地报告聚合 —— 把 Drift 里的睡眠会话、情绪行，
+/// 以及（授权后）系统健康库里的实测睡眠，折算成报告屏快照。
 ///
 /// M11 起不再「取最近一行为王」，而是把最近 30 晚一起交给 [buildSleepReport]：
 /// 由纯函数算出周环比、作息波动、连续天数与洞察句，聚合层只做 date→行 的搬运。
+///
+/// M13 起多了一路数据源：**同一晚只认一个来源，绝不混用**。
+/// 健康库里有这天的实测记录，就用实测；没有才用本机交互推算。
+/// 理由很实际 —— 两条来源的「夜醒次数」口径完全不同（手环数得到 1 分钟微觉醒，
+/// 用户只点过两次「再睡 5 分钟」），混在一张趋势图上比缺数据更误导人。
 Future<DfReportData?> aggregateLatestReport() async {
   final List<SleepSession> sessions =
       await DreamFlowDb.instance.recentSessions(limit: 30);
-  if (sessions.isEmpty) return null;
 
-  final List<DfNightInput> inputs = <DfNightInput>[
+  // 健康数据拿不到时 status 会是 unsupported/denied，nights 为空，
+  // 整条链路自然退回「推算」，不会抛异常、也不会空转。
+  final DfHealthSnapshot health = await DfHealth.snapshot();
+
+  final List<DfNightInput> estimated = <DfNightInput>[
     for (final SleepSession s in sessions)
       DfNightInput(
         bedTime: s.startedAt,
@@ -21,6 +32,13 @@ Future<DfReportData?> aggregateLatestReport() async {
         storedScore: s.score,
       ),
   ];
+
+  final List<DfNightInput> inputs = mergeNightSources(
+    estimated: estimated,
+    measured: <DfNightInput>[
+      for (final DfMeasuredNight night in health.nights) toNightInput(night),
+    ],
+  );
 
   final DfSleepReport? report = buildSleepReport(inputs);
   if (report == null) return null;
@@ -75,5 +93,14 @@ Future<DfReportData?> aggregateLatestReport() async {
     scoreDelta: report.delta,
     streak: report.streak,
     nightCount: report.nights.length,
+    health: health.status,
+    measured: latest.measured,
+    hasStages: latest.hasStages,
+    deepMinutes: latest.deepMinutes ?? 0,
+    lightMinutes: latest.lightMinutes ?? 0,
+    remMinutes: latest.remMinutes ?? 0,
+    awakeMinutes: latest.awakeMinutes ?? 0,
+    measuredNights:
+        report.nights.where((DfNightStat n) => n.measured).length,
   );
 }

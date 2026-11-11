@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- M13：只读睡眠分期。只要这一项 —— 不要心率、不要写入、
+         更不碰蓝牙和麦克风（手环数据由厂商 App 先写进健康库，我们只读） -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP"/>
     <application
         android:label="梦洄"
         android:name="${applicationName}"
@@ -58,6 +61,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- M13：Android 14+ 的 Health Connect 内置于系统，系统要求应用声明
+             一个「权限用途说明」入口，否则授权页会拒绝展示 -->
+        <activity-alias
+            android:name="ViewPermissionUsageActivity"
+            android:exported="true"
+            android:targetActivity=".MainActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE"/>
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS"/>
+            </intent-filter>
+        </activity-alias>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -78,5 +93,8 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
         </intent>
+        <!-- M13：Android 13 及以下 Health Connect 是独立应用，
+             声明包可见性才能查它的可用状态 -->
+        <package android:name="com.google.android.apps.healthdata"/>
     </queries>
 </manifest>

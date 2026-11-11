@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
+import 'package:dreamflow/data/df_health.dart';
 import 'package:dreamflow/data/sleep_analysis.dart';
 import 'package:dreamflow/design_system/df_tokens.dart';
 import 'package:dreamflow/design_system/df_type.dart';
+import 'package:dreamflow/design_system/widgets/df_controls.dart';
 import 'package:dreamflow/design_system/widgets/df_data.dart';
 import 'package:dreamflow/design_system/widgets/df_sheep.dart';
 import 'package:dreamflow/design_system/widgets/df_screen.dart';
 import 'package:dreamflow/design_system/widgets/df_states.dart';
 import 'package:dreamflow/design_system/widgets/df_surfaces.dart';
 
-/// M5 / M11：报告数据快照（由本地 Drift 聚合而来；UI 不直接依赖 db 类型，便于测试）。
+/// M5 / M11 / M13：报告数据快照（由本地 Drift + 系统健康库聚合而来；
+/// UI 不直接依赖 db 类型，便于测试）。
 class DfReportData {
   const DfReportData({
     required this.dateLabel,
@@ -31,6 +34,14 @@ class DfReportData {
     this.scoreDelta,
     this.streak = 0,
     this.nightCount = 0,
+    this.health = DfHealthStatus.unsupported,
+    this.measured = false,
+    this.hasStages = false,
+    this.deepMinutes = 0,
+    this.lightMinutes = 0,
+    this.remMinutes = 0,
+    this.awakeMinutes = 0,
+    this.measuredNights = 0,
   });
 
   /// 标题日期，如「昨夜 · 10月26日」
@@ -77,6 +88,24 @@ class DfReportData {
 
   /// 参与统计的夜晚数
   final int nightCount;
+
+  /// 健康数据通道状态（决定底部那张「连接手环」卡怎么显示）
+  final DfHealthStatus health;
+
+  /// 最近一晚是否来自健康库实测
+  final bool measured;
+
+  /// 最近一晚是否带分期明细（没有就只能看时长，不展示结构卡）
+  final bool hasStages;
+
+  // 以下四项仅实测夜有意义
+  final int deepMinutes;
+  final int lightMinutes;
+  final int remMinutes;
+  final int awakeMinutes;
+
+  /// 参与统计的夜晚里，有几晚是实测
+  final int measuredNights;
 }
 
 /// 报告数据加载器：注入则走本地聚合，null = 静态演示稿（测试 / 画廊用）
@@ -109,6 +138,14 @@ class _DfReportScreenState extends State<DfReportScreen> {
     widget.onRetry?.call();
   }
 
+  /// 拉起系统的健康数据授权页；回来后重跑 loader，
+  /// 让刚授权到的实测数据立刻进报告（不用用户退出重进）
+  Future<void> _connectHealth() async {
+    await DfHealth.requestPermission();
+    if (!mounted) return;
+    _retry();
+  }
+
   @override
   Widget build(BuildContext context) {
     final DfStateKind? state = widget.state;
@@ -120,8 +157,7 @@ class _DfReportScreenState extends State<DfReportScreen> {
         body: _ReportBody(
           data: _demoData(context),
           moodBarsDemo: _demoMoodBars,
-        ),
-      );
+        ),      );
     }
 
     return DfScreenScaffold(
@@ -159,6 +195,7 @@ class _DfReportScreenState extends State<DfReportScreen> {
                 return _ReportBody(
                   data: data,
                   moodBarsDemo: const <({String label, int value})>[],
+                  onConnectHealth: _connectHealth,
                 );
               },
             ),
@@ -167,10 +204,17 @@ class _DfReportScreenState extends State<DfReportScreen> {
 }
 
 class _ReportBody extends StatelessWidget {
-  const _ReportBody({required this.data, required this.moodBarsDemo});
+  const _ReportBody({
+    required this.data,
+    required this.moodBarsDemo,
+    this.onConnectHealth,
+  });
 
   final DfReportData data;
   final List<({String label, int value})> moodBarsDemo;
+
+  /// 点击「去授权」时回调；null 表示当前上下文不可授权（演示稿）
+  final Future<void> Function()? onConnectHealth;
 
   @override
   Widget build(BuildContext context) {
@@ -196,12 +240,23 @@ class _ReportBody extends StatelessWidget {
           DfMetricGrid(
             children: <Widget>[
               DfMetric(label: '睡眠时长', value: data.durationLabel, unit: '时'),
-              // 无传感器时不编造「深睡分钟数」，只给能从时长诚实推算的周期数
-              DfMetric(label: '睡眠周期', value: '${data.cycles}', unit: '个'),
+              // 有实测分期就给真深睡；没有才退回「时长 ÷ 90 分钟」的周期数，两者都不编
+              if (data.hasStages)
+                DfMetric(
+                  label: '深睡',
+                  value: (data.deepMinutes / 60).toStringAsFixed(1),
+                  unit: '时',
+                )
+              else
+                DfMetric(label: '睡眠周期', value: '${data.cycles}', unit: '个'),
               DfMetric(label: '夜间醒来', value: '${data.awakenings}', unit: '次'),
               DfMetric(label: '情绪记录', value: '${data.moodCount}', unit: '条'),
             ],
           ),
+          if (data.hasStages) ...<Widget>[
+            const SizedBox(height: 10),
+            _StageCard(data: data),
+          ],
           if (data.trend.isNotEmpty) ...<Widget>[
             const SizedBox(height: 16),
             _TrendCard(data: data),
@@ -219,9 +274,24 @@ class _ReportBody extends StatelessWidget {
             _InsightCard(insights: data.insights),
           ],
           const SizedBox(height: 12),
+          if (data.health != DfHealthStatus.unsupported) ...<Widget>[
+            _HealthCard(data: data, onConnect: onConnectHealth),
+            const SizedBox(height: 12),
+          ],
           Text(
-            '睡眠分由时长与夜醒次数本地估算，不是医疗指标。',
+            '评分由时长与夜醒次数本地计算，不是医疗指标。',
             style: DfType.caption(context, p.text2),
+          ),
+          const SizedBox(height: 6),
+          // 数据可能来自手环的估算算法或本机交互推算，只作参考 ——
+          // 放在右下角，不打断阅读，但翻到底一定看得到
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '该数据仅供参考，如有不符请以实际为准',
+              textAlign: TextAlign.right,
+              style: DfType.caption(context, p.text2),
+            ),
           ),
           const SizedBox(height: 20),
         ],
@@ -649,6 +719,208 @@ class _InsightCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 睡眠结构（仅实测夜）
+// ─────────────────────────────────────────────────────────────────────────────
+class _StageSeg {
+  const _StageSeg(this.label, this.minutes, this.color);
+
+  final String label;
+  final int minutes;
+  final Color color;
+}
+
+/// M13：深睡 / 浅睡 / REM / 清醒 的占比条。
+/// 只有健康库真给了分期才渲染这一块 —— 没有就整块不出现，不做「按比例摊」。
+class _StageCard extends StatelessWidget {
+  const _StageCard({required this.data});
+
+  final DfReportData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    final List<_StageSeg> segs = <_StageSeg>[
+      _StageSeg('深睡', data.deepMinutes, p.mistBlue),
+      _StageSeg('浅睡', data.lightMinutes, p.mistBlue.withValues(alpha: 0.30)),
+      _StageSeg('REM', data.remMinutes, p.mistGreen),
+      _StageSeg('清醒', data.awakeMinutes, p.mistYellow),
+    ];
+    final int total =
+        segs.fold<int>(0, (int a, _StageSeg s) => a + s.minutes);
+    if (total <= 0) return const SizedBox.shrink();
+
+    return DfCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: <Widget>[
+              Text('睡眠结构', style: DfType.bodyS(context, p.text)),
+              Text('手环实测', style: DfType.caption(context, p.text2)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(DfRadius.pill),
+            child: SizedBox(
+              height: 10,
+              child: Row(
+                children: <Widget>[
+                  for (final _StageSeg s in segs)
+                    if (s.minutes > 0)
+                      Expanded(
+                        flex: s.minutes,
+                        child: ColoredBox(color: s.color),
+                      ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 18,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final _StageSeg s in segs) _Legend(seg: s),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend({required this.seg});
+
+  final _StageSeg seg;
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: seg.color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '${seg.label} ${seg.minutes}′',
+          style: DfType.caption(context, p.text2),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 数据来源（健康库授权状态）
+// ─────────────────────────────────────────────────────────────────────────────
+class _HealthCard extends StatelessWidget {
+  const _HealthCard({required this.data, this.onConnect});
+
+  final DfReportData data;
+  final Future<void> Function()? onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final DfPalette p = DfPalette.of(context);
+
+    switch (data.health) {
+      case DfHealthStatus.granted:
+        return DfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: <Widget>[
+                  Text('数据来源', style: DfType.bodyS(context, p.text)),
+                  Text('系统健康应用', style: DfType.caption(context, p.text2)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                data.measuredNights > 0
+                    ? '近 ${data.nightCount} 晚里 ${data.measuredNights} 晚来自手环实测。'
+                        '只读授权，数据不出这台手机。'
+                    : '已授权，但最近没有同步到睡眠记录。'
+                        '打开手环 App 同步一次就会出现在这里。',
+                style: DfType.caption(context, p.text2),
+              ),
+            ],
+          ),
+        );
+
+      case DfHealthStatus.denied:
+        return DfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('连接手环数据', style: DfType.bodyS(context, p.text)),
+              const SizedBox(height: 8),
+              Text(
+                '授权后可以直接读手环记录的深睡、REM 和夜醒，'
+                '比手动记录准得多。只读，不上传。',
+                style: DfType.caption(context, p.text2),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: DfGhostButton(
+                  label: '去授权',
+                  onPressed: onConnect == null ? null : () => onConnect!(),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case DfHealthStatus.needsUpdate:
+        return DfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('Health Connect 需要更新', style: DfType.bodyS(context, p.text)),
+              const SizedBox(height: 8),
+              Text(
+                '到应用商店把 Health Connect 更新到最新版本，再回到这里就能读取。',
+                style: DfType.caption(context, p.text2),
+              ),
+            ],
+          ),
+        );
+
+      case DfHealthStatus.unavailable:
+        return DfCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('本机暂无健康数据源', style: DfType.bodyS(context, p.text)),
+              const SizedBox(height: 8),
+              Text(
+                '装好 Health Connect、并让手环 App 同步过一晚，这里就会出现实测分期。',
+                style: DfType.caption(context, p.text2),
+              ),
+            ],
+          ),
+        );
+
+      case DfHealthStatus.unsupported:
+        return const SizedBox.shrink();
+    }
   }
 }
 

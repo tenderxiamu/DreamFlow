@@ -17,23 +17,48 @@ import 'dart:math' as math;
 
 import 'light_sleep.dart';
 
-/// 一晚睡眠的原始输入（由 `SleepSessions` 行投影而来）。
+/// 一晚睡眠的原始输入（由 `SleepSessions` 行或健康库聚合而来）。
 class DfNightInput {
   const DfNightInput({
     required this.bedTime,
     required this.wakeTime,
     required this.awakenings,
     this.storedScore,
+    this.measured = false,
+    this.deepMinutes,
+    this.lightMinutes,
+    this.remMinutes,
+    this.awakeMinutes,
   });
 
   final DateTime bedTime;
   final DateTime wakeTime;
 
-  /// 夜间「再睡 5 分钟」的次数
+  /// 夜间醒来的次数
+  /// - 推算夜：用户点「再睡 5 分钟」的次数
+  /// - 实测夜：健康库里 ≥5 分钟的清醒段数
   final int awakenings;
 
   /// 落库时算好的分（历史数据可能为 null）
   final int? storedScore;
+
+  /// 是否来自系统健康库（true = 手环实测，false = 本机交互推算）
+  final bool measured;
+
+  /// 以下四项仅实测夜有值
+  final int? deepMinutes;
+  final int? lightMinutes;
+  final int? remMinutes;
+  final int? awakeMinutes;
+}
+
+/// 数据的来源，决定报告上该说什么话。
+enum DfNightSource {
+  /// 本机交互推算（进助眠页 → 点「我醒了」）
+  estimated,
+
+  /// 系统健康库实测（手环 → 厂商 App → 健康库）
+  measured,
 }
 
 /// 一晚的派生统计。
@@ -45,6 +70,11 @@ class DfNightStat {
     required this.awakenings,
     required this.score,
     required this.scoreFromStore,
+    this.measured = false,
+    this.deepMinutes,
+    this.lightMinutes,
+    this.remMinutes,
+    this.awakeMinutes,
   });
 
   factory DfNightStat.from(DfNightInput input) {
@@ -64,6 +94,11 @@ class DfNightStat {
       awakenings: awakenings,
       score: score,
       scoreFromStore: stored != null,
+      measured: input.measured,
+      deepMinutes: input.deepMinutes,
+      lightMinutes: input.lightMinutes,
+      remMinutes: input.remMinutes,
+      awakeMinutes: input.awakeMinutes,
     );
   }
 
@@ -75,6 +110,28 @@ class DfNightStat {
 
   /// 分数是落库时算的（false = 这里补算，用于旧数据缺分）
   final bool scoreFromStore;
+
+  /// 是否来自系统健康库实测
+  final bool measured;
+
+  final int? deepMinutes;
+  final int? lightMinutes;
+  final int? remMinutes;
+  final int? awakeMinutes;
+
+  DfNightSource get source =>
+      measured ? DfNightSource.measured : DfNightSource.estimated;
+
+  /// 有分期明细才展示睡眠结构（没有就不编）
+  bool get hasStages =>
+      measured &&
+      (deepMinutes ?? 0) + (lightMinutes ?? 0) + (remMinutes ?? 0) > 0;
+
+  int get asleepMinutes =>
+      (deepMinutes ?? 0) + (lightMinutes ?? 0) + (remMinutes ?? 0);
+
+  /// 分期总时长（睡眠 + 夜醒），结构条按它算占比
+  int get stagedMinutes => asleepMinutes + (awakeMinutes ?? 0);
 
   double get hours => duration.inMinutes / 60.0;
 

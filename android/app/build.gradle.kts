@@ -31,7 +31,9 @@ android {
         applicationId = "com.dreamflow.dreamflow"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Flutter 默认 21；M13 接 Health Connect 后必须 26（Android 8.0）——
+        // 客户端库的清单里写死了 minSdk 26，强行 override 会在低版本上运行时炸
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -74,4 +76,12 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // M9 相册选图：读照片的 EXIF 旋转角（BitmapFactory 不解 EXIF，不转会躺下）
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // M13 健康数据：只读睡眠分期（手环 → 厂商 App → 健康库 → 这里）
+    implementation("androidx.health.connect:connect-client:1.1.0")
+    // Health Connect 的 readRecords / getGrantedPermissions 都是 suspend，
+    // 原生侧用 runBlocking 在后台线程里调用（FlutterActivity 没有协程作用域）
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // 授权流程用的是 ActivityResultContract（connect-client 只把它当实现依赖，
+    // 不暴露给我们编译期），这里显式补上
+    implementation("androidx.activity:activity:1.8.2")
 }
